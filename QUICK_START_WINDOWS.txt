@@ -1,11 +1,11 @@
-CATALYST INSIGHT STUDIO
+LATTICE
 
 1. Install Python 3.13.
 2. Double-click run_app_windows.bat.
 3. Open the local URL and try the sample investigation or import a spreadsheet.
 
 The launcher uses an isolated .venv and listens only on this computer.
-Projects autosave under .catalyst. Download a portable project for backup.
+Projects autosave under .lattice. Download a portable project for backup.
 
 Instructor access requires configured institutional sign-in; there is no default
 password. See DEPLOYMENT.md and README.md for setup and workflow instructions.

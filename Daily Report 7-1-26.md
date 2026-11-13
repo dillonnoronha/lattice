@@ -1,6 +1,6 @@
 # Daily Report — July 1, 2026
 
-**Project:** General Chemistry II Catalyst Insight Studio
+**Project:** Lattice
 **Author:** Dillon Noronha (with Claude)
 **Branch:** `secondmain`
 

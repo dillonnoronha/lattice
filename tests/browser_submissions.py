@@ -11,7 +11,7 @@ out.mkdir(exist_ok=True)
 with sync_playwright() as p:
     browser = p.chromium.launch(channel=os.environ.get("PLAYWRIGHT_CHANNEL", "chrome"), headless=True)
     page = browser.new_page(viewport={"width": 1440, "height": 1100}, reduced_motion="reduce")
-    page.goto(os.environ.get("CATALYST_TEST_URL", "http://127.0.0.1:8501"), wait_until="networkidle")
+    page.goto(os.environ.get("LATTICE_TEST_URL", "http://127.0.0.1:8501"), wait_until="networkidle")
     page.get_by_role("button", name="Start a blank results sheet").click()
     expect(page.get_by_role("button", name="Build and check compound")).to_be_visible(timeout=30000)
     page.get_by_role("textbox", name="Lab group code (no names)", exact=True).fill("QA-G07")
@@ -33,6 +33,7 @@ with sync_playwright() as p:
     expect(download_button).to_be_visible(timeout=30000)
     with page.expect_download() as download:
         download_button.click()
+    assert download.value.suggested_filename == "lattice_student_results.csv"
     download.value.save_as(str(out / "student-results.csv"))
     data = pd.read_csv(out / "student-results.csv")
     assert len(data) == 1 and data.iloc[0].LabGroup == "QA-G07"

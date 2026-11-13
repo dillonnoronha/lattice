@@ -15,7 +15,7 @@ def main():
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
-    env = dict(os.environ, CATALYST_LOCAL_MODE="0", CATALYST_TEST_URL=f"http://127.0.0.1:{port}")
+    env = dict(os.environ, LATTICE_LOCAL_MODE="0", LATTICE_TEST_URL=f"http://127.0.0.1:{port}")
     artifacts = ROOT / "qa-artifacts"
     artifacts.mkdir(exist_ok=True)
     with (artifacts / "browser-server.log").open("w", encoding="utf-8") as log:
@@ -29,7 +29,7 @@ def main():
                 if server.poll() is not None:
                     raise RuntimeError("Test server exited; see qa-artifacts/browser-server.log")
                 try:
-                    with urlopen(env["CATALYST_TEST_URL"] + "/_stcore/health", timeout=1) as response:
+                    with urlopen(env["LATTICE_TEST_URL"] + "/_stcore/health", timeout=1) as response:
                         if response.status == 200:
                             break
                 except (URLError, TimeoutError):

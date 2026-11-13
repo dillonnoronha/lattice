@@ -1,4 +1,4 @@
-# Catalyst Insight Studio
+# Lattice
 
 A chemistry research workspace for preparing class observations, investigating patterns,
 designing experiments, and comparing hypotheses with measured outcomes.
@@ -15,7 +15,7 @@ binds the app to 127.0.0.1, and enables local autosave. Python 3.13 is the teste
 ```powershell
 py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-$env:CATALYST_LOCAL_MODE = '1'
+$env:LATTICE_LOCAL_MODE = '1'
 .\.venv\Scripts\python.exe -m streamlit run app.py --server.address 127.0.0.1
 ```
 
@@ -58,9 +58,16 @@ maintenance and the complete notebook are labeled as whole-project views.
 
 ## Saving and access
 
-Local mode saves immutable snapshots under ignored `.catalyst/`. On a hosted server, local mode
+Local mode saves immutable snapshots under ignored `.lattice/`. On a hosted server, local mode
 must be off; authenticated users receive separate storage namespaces. Anonymous users can
 download/reopen portable JSON bundles. Hosted storage needs a persistent volume and backups.
+
+Existing `.catalyst/` stores and `CATALYST_LOCAL_MODE` launchers remain compatible. Lattice
+uses an owner's existing store when present; new stores use `.lattice/`. An explicit
+`LATTICE_LOCAL_MODE` setting takes precedence. Portable project and CSV formats are unchanged.
+
+Printable instructions: [Students](output/pdf/Lattice_Students_Results_Guide.pdf) and
+[Instructors](output/pdf/Lattice_Instructors_Results_Guide.pdf).
 
 Snapshots omit student contact/group columns. Free-text hypotheses and notes remain: review them
 before sharing. Original contact fields remain only in the uploaded session and require instructor

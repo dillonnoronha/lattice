@@ -1,4 +1,4 @@
-# Student results → class dataset
+# Lattice: student results → class dataset
 
 Updated November 13, 2026.
 

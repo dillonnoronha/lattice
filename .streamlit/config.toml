@@ -2,16 +2,16 @@
 font = "sans serif"
 
 [theme.light]
-primaryColor = "#087f83"
-backgroundColor = "#f5f7fb"
-secondaryBackgroundColor = "#ffffff"
-textColor = "#1a2233"
+primaryColor = "#31566f"
+backgroundColor = "#faf9f5"
+secondaryBackgroundColor = "#f0f1ed"
+textColor = "#24323b"
 
 [theme.dark]
-primaryColor = "#4fd1c5"
-backgroundColor = "#0e1623"
-secondaryBackgroundColor = "#172334"
-textColor = "#e5edf5"
+primaryColor = "#d7a785"
+backgroundColor = "#111c27"
+secondaryBackgroundColor = "#1b2a38"
+textColor = "#edf0f2"
 
 [browser]
 gatherUsageStats = false

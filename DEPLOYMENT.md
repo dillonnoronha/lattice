@@ -3,15 +3,16 @@
 ## Local workstation
 
 Use run_app_windows.bat with Python 3.13. It installs pinned dependencies into .venv, sets
-CATALYST_LOCAL_MODE=1, and binds to 127.0.0.1. Local projects are shared by people using that
+LATTICE_LOCAL_MODE=1, and binds to 127.0.0.1. Local projects are shared by people using that
 OS account. Local mode enables storage, not instructor authorization. Do not expose it to a network.
 
 ## Hosted deployment
 
 1. Install requirements.txt with Python 3.13.
-2. Leave CATALYST_LOCAL_MODE unset and do not bundle real student spreadsheets.
+2. Leave LATTICE_LOCAL_MODE and the legacy CATALYST_LOCAL_MODE unset; do not bundle real student spreadsheets.
 3. Configure institutional OIDC in .streamlit/secrets.toml or your host's secret store.
-4. Put .catalyst on persistent, access-restricted storage with backups.
+4. Put .lattice on persistent, access-restricted storage with backups.
+   Existing .catalyst owner stores remain supported; preserve those volumes during upgrades.
 5. Run tests and verify actual instructor/student sign-in before distribution.
 
 Copy .streamlit/secrets.toml.example to the ignored secrets.toml and supply actual provider
@@ -29,7 +30,7 @@ exports and combining student files require instructor authorization. Snapshots 
 contact fields; instructor/semester labels remain as cohort metadata. Notes are retained as
 written. Identifiable uploads can remain in server memory, so use trusted hosting.
 
-Keep .catalyst, secrets.toml, original class datasets, logs, and QA screenshots out of Git.
+Keep .lattice, secrets.toml, original class datasets, logs, and QA screenshots out of Git.
 Anonymous hosted sessions should download portable bundles before closing. Ephemeral server
 storage can be lost on restart.
 

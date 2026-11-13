@@ -1,1 +1,1 @@
-"""Test suite for General Chemistry II Catalyst Insight Studio."""
+"""Test suite for Lattice."""

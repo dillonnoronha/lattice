@@ -23,7 +23,7 @@ def main() -> None:
         print("Updating runtime: " + ", ".join(missing), flush=True)
         subprocess.run([sys.executable, "-m", "pip", "install", "-r", str(requirements)], check=True)
     else:
-        print("Runtime is ready; starting Catalyst.")
+        print("Runtime is ready; starting Lattice.")
 
 
 if __name__ == "__main__":

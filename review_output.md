@@ -1,4 +1,4 @@
-# Code Review: General Chemistry II Catalyst Insight Studio
+# Code Review: Lattice
 
 ## Summary
 This review examined `app.py` (918 lines) and `pipeline.py` (1551 lines) for dead code, unused imports, overly long functions, and non-modular ML pipeline steps.

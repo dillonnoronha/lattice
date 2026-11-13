@@ -22,6 +22,33 @@ from submissions import submission_table, conflicting_experiments, duplicate_key
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_lattice_local_mode_accepts_legacy_setting_but_new_setting_wins(monkeypatch):
+    from access import local_mode
+    monkeypatch.delenv("LATTICE_LOCAL_MODE", raising=False)
+    monkeypatch.setenv("CATALYST_LOCAL_MODE", "1")
+    assert local_mode()
+    monkeypatch.setenv("LATTICE_LOCAL_MODE", "0")
+    assert not local_mode()
+    monkeypatch.setenv("LATTICE_LOCAL_MODE", "1")
+    assert local_mode()
+
+
+def test_lattice_keeps_existing_owner_projects_accessible(tmp_path, monkeypatch):
+    monkeypatch.setattr(pr, "ROOT", tmp_path)
+    legacy = pr.ProjectStore("existing-owner", tmp_path / ".catalyst")
+    project = pr.new_project("Existing investigation")
+    revision = legacy.save(project)
+    current = pr.ProjectStore("existing-owner")
+    assert current.load(project["id"])["name"] == "Existing investigation"
+    assert current.revisions(project["id"]) == [revision]
+    project["name"] = "Continued in Lattice"
+    current.save(project)
+    assert legacy.load(project["id"])["name"] == "Continued in Lattice"
+    fresh = pr.ProjectStore("new-owner")
+    fresh.save(pr.new_project("New investigation"))
+    assert ".lattice" in fresh.root.parts
+
+
 def test_unchanged_save_does_not_write_and_catalog_does_not_load_datasets(tmp_path, monkeypatch):
     store = pr.ProjectStore("test", tmp_path)
     project = pr.new_project("Before")
@@ -161,7 +188,7 @@ def test_coverage_separates_sections_and_counts_only_confirmed_results():
 
 
 def test_autosave_skips_navigation_but_captures_renames(tmp_path, monkeypatch):
-    monkeypatch.setenv("CATALYST_LOCAL_MODE", "1")
+    monkeypatch.setenv("LATTICE_LOCAL_MODE", "1")
     monkeypatch.setattr(pr, "ROOT", tmp_path)
     saved = []
     save = pr.ProjectStore.save

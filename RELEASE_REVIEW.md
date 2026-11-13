@@ -1,6 +1,10 @@
-# Catalyst 2.2 release review
+# Lattice 2.2.1 release review
 
-Reviewed November 13, 2026. Changes were implemented in the local workspace.
+Reviewed November 13, 2026. The application is now named Lattice.
+
+The 2.2.1 update applies the Lattice name to the interface, reports, download filenames,
+launcher, documentation, and separate student/instructor PDF guides. The theme uses ivory,
+navy, and muted copper. Older project stores and local-mode settings remain compatible.
 
 ## Changes
 
@@ -31,10 +35,11 @@ approximately 9.4× faster). This measures project listing, not overall app spee
 
 ## Verification and deployment boundary
 
-Local verification completed: **104 tests passed in 19.10 seconds**; both live Chrome browser
+Local verification completed: **106 tests passed in 20.37 seconds**; both live Chrome browser
 checks passed; `pip check` found no broken requirements; `git diff --check` found no whitespace
 errors. Screenshots were inspected for desktop, mobile, dark mode, and submission intake. The
-updated CI workflow has been added locally and has not been run on GitHub.
+previous release passed the same CI workflow on GitHub; the Lattice update includes the
+additional compatibility and browser branding checks.
 
 The regression suite covers scientific calculations, model evaluation, data privacy, identity gates,
 storage/recovery, entry/edit/backup behavior, and submission integrity. Live Chrome checks cover
@@ -43,4 +48,5 @@ desktop, mobile, native dark mode, and entry → CSV → multi-file merge → cl
 Production hosting, real institutional OIDC sign-in, and multi-user load testing remain deployment
 checks. Local snapshots and CSV intake are implemented; there is no shared submission inbox,
 automatic LMS transfer, or remote database synchronization. Keep portable backups, and use a single
-instructor writer for each master project. The changes have not been published or pushed.
+instructor writer for each master project. Publishing to GitHub does not configure hosting or
+institutional sign-in; no hosting deployment was performed during this update.

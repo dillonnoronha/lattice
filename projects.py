@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 SCHEMA_VERSION = 1
-APP_VERSION = "2.2.0"
+APP_VERSION = "2.2.1"
 ROOT = Path(__file__).resolve().parent
 MAX_BUNDLE_BYTES = 25 * 1024 * 1024
 # Explicit allowlist: imported spreadsheets may contain unexpected contact fields.
@@ -149,7 +149,7 @@ def read_bundle(data: bytes) -> dict:
             raise ValueError("Non-finite JSON values are not supported.")
         return validate_project(json.loads(data, parse_constant=reject_constant))
     except (KeyError, TypeError, json.JSONDecodeError, UnicodeDecodeError) as exc:
-        raise ValueError("This is not a valid Catalyst project bundle.") from exc
+        raise ValueError("This is not a valid Lattice project bundle.") from exc
 
 
 class ProjectStore:
@@ -157,7 +157,12 @@ class ProjectStore:
     def __init__(self, owner: str, root: Path | None = None):
         if not owner:
             raise ValueError("An authenticated identity or explicit local mode is required.")
-        self.root = (root or ROOT / ".catalyst") / hashlib.sha256(owner.encode()).hexdigest()
+        owner_id = hashlib.sha256(owner.encode()).hexdigest()
+        self.root = (root or ROOT / ".lattice") / owner_id
+        # Continue using an owner's existing store so a rename cannot hide saved work.
+        legacy = ROOT / ".catalyst" / owner_id
+        if root is None and not self.root.exists() and legacy.exists():
+            self.root = legacy
         if os.name == "nt":
             # Hash-based revision paths can exceed Windows' legacy 260-character limit.
             absolute = str(self.root.resolve())

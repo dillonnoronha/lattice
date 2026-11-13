@@ -125,7 +125,7 @@ def render_submission_download(entries: pd.DataFrame, atomic: pd.DataFrame) -> N
         return
     st.dataframe(table, hide_index=True, width="stretch")
     st.download_button("Download student submission CSV", dataframe_to_csv_bytes(table),
-                       file_name="catalyst_student_results.csv", mime="text/csv", type="primary",
+                       file_name="lattice_student_results.csv", mime="text/csv", type="primary",
                        key="download_student_submission")
     st.caption(f"{len(table)} experiment(s). Keep the experiment IDs unchanged when resubmitting the same file. "
                "Use a new entry for a real repeat trial. Do not enter student names or emails in notes or group codes.")
@@ -175,7 +175,7 @@ def render_submission_intake(existing: pd.DataFrame, atomic: pd.DataFrame) -> No
     st.dataframe(submission_summary(combined), hide_index=True, width="stretch")
     st.caption("Counts show received experiments by section and lab group. Compare with your roster to identify missing submissions.")
     st.download_button("Download combined class CSV", dataframe_to_csv_bytes(combined),
-                       "catalyst_class_results.csv", "text/csv")
+                       "lattice_class_results.csv", "text/csv")
     if st.button("Open combined class results as a new project", type="primary"):
         import projects as pr
         from workspace_ui import activate

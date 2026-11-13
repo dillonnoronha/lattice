@@ -4,7 +4,8 @@ import streamlit as st
 
 
 def local_mode() -> bool:
-    return os.environ.get("CATALYST_LOCAL_MODE") == "1"
+    # Older launchers remain compatible; an explicit Lattice setting takes precedence.
+    return os.environ.get("LATTICE_LOCAL_MODE", os.environ.get("CATALYST_LOCAL_MODE")) == "1"
 
 
 def settings() -> dict:

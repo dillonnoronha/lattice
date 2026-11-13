@@ -92,7 +92,7 @@ def sidebar_projects(store: pr.ProjectStore | None) -> None:
             sample = Path(__file__).parent / "data" / "Sample_Class_Data.csv"
             raw = read_table_from_bytes(sample.read_bytes(), sample.name)
             long, warnings = normalize_to_long_format(raw)
-            p = pr.new_project("Sample catalyst investigation")
+            p = pr.new_project("Sample oxide investigation")
             p["dataset"] = pr.encode_frame(pr.anonymous_data(long))
             p["source"] = "Bundled sample data"
             pr.append_event(p, "Dataset imported", f"{len(long)} sample compounds")
@@ -498,13 +498,13 @@ def share(df: pd.DataFrame, issues: pd.DataFrame, outliers: pd.DataFrame, store)
     st.caption("Analysis files use the active scope. Portable project bundles contain the whole project, without contact columns.")
     cols = st.columns(2)
     with cols[0]:
-        st.download_button("Analysis data · CSV", dataframe_to_csv_bytes(public), "catalyst_analysis.csv", "text/csv")
-        st.download_button("Analysis data · Excel", dataframe_to_excel_bytes(public), "catalyst_analysis.xlsx")
+        st.download_button("Analysis data · CSV", dataframe_to_csv_bytes(public), "lattice_analysis.csv", "text/csv")
+        st.download_button("Analysis data · Excel", dataframe_to_excel_bytes(public), "lattice_analysis.xlsx")
         st.download_button("Validation report", dataframe_to_csv_bytes(public_view(issues)), "validation.csv", "text/csv")
         st.download_button("Outlier report", dataframe_to_csv_bytes(public_view(outliers)), "outliers.csv", "text/csv")
     with cols[1]:
         st.download_button("Analysis provenance · JSON", json.dumps(manifest, indent=2), "analysis_manifest.json", "application/json")
-        st.download_button("Portable project · JSON", pr.bundle_bytes(p), "catalyst_project.json", "application/json")
+        st.download_button("Portable project · JSON", pr.bundle_bytes(p), "lattice_project.json", "application/json")
         st.caption("Project bundles include hypothesis text and notes. Review free-text notes before sharing.")
     if access.is_instructor():
         with st.expander("Instructor exports · includes identifiable records"):
@@ -528,7 +528,7 @@ def share(df: pd.DataFrame, issues: pd.DataFrame, outliers: pd.DataFrame, store)
                 else:
                     text = result["message"]
                 sections.append(f"<h2>{title}</h2><p>{escape(text)}</p>")
-            report = f"""<!doctype html><html lang="en"><meta charset="utf-8"><title>Catalyst research report</title>
+            report = f"""<!doctype html><html lang="en"><meta charset="utf-8"><title>Lattice research report</title>
             <style>body{{font:16px/1.6 system-ui;max-width:920px;margin:3rem auto;color:#182d40;padding:1rem}}h1,h2{{color:#126773}}table{{border-collapse:collapse;width:100%}}td,th{{padding:.4rem;border-bottom:1px solid #ddd;text-align:left}}pre{{white-space:pre-wrap;overflow-wrap:anywhere}}@media print{{body{{margin:0}}}}</style>
             <h1>{escape(p['name'])}</h1><p>Generated {escape(pr.now())} · {len(df)} compounds in scope</p>
             <p>Bubble: {escape(wilson(df.get('BubbleYes', pd.Series(dtype=float))))}<br>Purity: {escape(wilson(df.get('PureYes', pd.Series(dtype=float))))}</p>
@@ -539,7 +539,7 @@ def share(df: pd.DataFrame, issues: pd.DataFrame, outliers: pd.DataFrame, store)
             st.session_state.research_report = (report_context, report)
     cached = st.session_state.get("research_report")
     if cached and cached[0] == report_context:
-        st.download_button("Download printable report · HTML", cached[1], "catalyst_report.html", "text/html")
+        st.download_button("Download printable report · HTML", cached[1], "lattice_report.html", "text/html")
     with st.expander("Project history & restore"):
         st.dataframe(pd.DataFrame(p["history"]), hide_index=True, width="stretch")
         if store:
@@ -558,14 +558,15 @@ def share(df: pd.DataFrame, issues: pd.DataFrame, outliers: pd.DataFrame, store)
 
 def run() -> None:
     import app as views
-    st.set_page_config(page_title="Catalyst Insight Studio", page_icon="🧪", layout="wide")
+    st.set_page_config(page_title="Lattice", page_icon="🧪", layout="wide")
     owner = access.storage_owner()
     if st.session_state.get("_store_owner", owner) != owner:
         st.session_state.clear()
     st.session_state._store_owner = owner
     store = pr.ProjectStore(owner) if owner else None
     sync_project(store)  # Capture edits made immediately before a rerun.
-    st.sidebar.markdown("## Catalyst\nInsight Studio")
+    st.sidebar.markdown("## Lattice")
+    st.sidebar.caption("Chemistry research workspace")
     from design import inject_styles
     inject_styles()
     set_chart_theme(st.context.theme.type or "light")
