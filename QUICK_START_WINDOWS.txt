@@ -1,30 +1,11 @@
-General Chemistry II Catalyst Insight Studio - Quick Start for Windows
-===========================================================
+CATALYST INSIGHT STUDIO
 
-1. Unzip this folder somewhere easy, such as:
-   C:\Users\YOURNAME\Desktop\GeneralChemistryII-Research-Project
+1. Install Python 3.13.
+2. Double-click run_app_windows.bat.
+3. Open the local URL and try the sample investigation or import a spreadsheet.
 
-2. Open the folder.
+The launcher uses an isolated .venv and listens only on this computer.
+Projects autosave under .catalyst. Download a portable project for backup.
 
-3. Double-click:
-   run_app_windows.bat
-
-   OR run these commands in PowerShell inside this folder:
-
-   py -m pip install -r requirements.txt
-   py -m streamlit run app.py
-
-4. Your browser should open automatically.
-
-5. In the left sidebar, upload:
-   Combined_Data.xlsx
-
-6. Use the tabs in order:
-   Start Here -> Check Data -> Explore Results -> Relationship Map -> ML Lab -> Add Compound -> Export
-
-Notes
------
-- The app does not overwrite your original Excel file.
-- To save new or cleaned data, use the Export tab.
-- If PowerShell says "streamlit is not recognized", run:
-  py -m streamlit run app.py
+Instructor access requires configured institutional sign-in; there is no default
+password. See DEPLOYMENT.md and README.md for setup and workflow instructions.

@@ -1,36 +1,85 @@
-# General Chemistry II Catalyst Insight Studio
+# Catalyst Insight Studio
 
-Streamlit app for exploring General Chemistry II catalyst experiment data.
+A chemistry research workspace for preparing class observations, investigating patterns,
+designing experiments, and comparing hypotheses with measured outcomes.
 
-## Run
+See [the 2.2 release review](RELEASE_REVIEW.md) for reliability improvements, validation results,
+and deployment boundaries, and [the student results workflow](STUDENT_RESULTS_WORKFLOW.md)
+for entry, CSV submission, and instructor collection instructions.
 
-```bash
-pip install -r requirements.txt
-streamlit run app.py
+## Run locally
+
+On Windows, double-click `run_app_windows.bat`. It creates an isolated Python environment,
+binds the app to 127.0.0.1, and enables local autosave. Python 3.13 is the tested runtime.
+
+```powershell
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+$env:CATALYST_LOCAL_MODE = '1'
+.\.venv\Scripts\python.exe -m streamlit run app.py --server.address 127.0.0.1
 ```
 
-Windows shortcut: double-click `run_app_windows.bat`
+## Research workflow
 
-## File structure
+For class collection, students now choose **Start a blank results sheet**, enter and validate each
+experiment, and download **student submission CSV** for the LMS. Instructors use **Prepare data →
+Combine submission CSVs** to review the batch and open/download the combined class dataset.
+See [STUDENT_RESULTS_WORKFLOW.md](STUDENT_RESULTS_WORKFLOW.md) for the handout and partner reply.
+This is a file-based handoff, not an automatic shared-database submission service.
 
-| File | Purpose |
-|---|---|
-| `app.py` | Streamlit UI — layout, widgets, tabs |
-| `pipeline.py` | All data logic — cleaning, ML, exports |
-| `data/Combined_Data.xlsx` | Main class database (auto-loaded if present) |
-| `data/AtomicMass.csv` | Element reference table |
+1. **Overview**: confirmed outcome rates, denominators, intervals, and data quality.
+2. **Prepare data**: correct elements, validate entries, add observations, merge semesters.
+3. **Investigate**: element outcomes, relationships, PCA, and searchable compound details.
+4. **Experiment Designer**: composition-only or known-phase analysis, model evaluation,
+   similarity evidence, missing-property warnings, oxygen sweeps, and saved hypotheses.
+5. **Lab notebook**: compare candidates, record results, undo observation edits, and explicitly
+   add observed experiments to the dataset.
+6. **Share findings**: anonymous analysis exports, printable reports, provenance, portable
+   project bundles, and restoration of saved revisions.
 
-## Upload format
+Use the sample investigation without uploading a file. Its four compounds intentionally do
+not qualify for modeling. Models need at least ten confirmed labels, both outcomes, and
+sufficient independent compositions.
 
-The app expects columns like `1A`, `1AN`, `1B`, `1BN`, `1O`, `1ON`, `1P`, `1Bub` (slots 1–4).
-Upload `Combined_Data.xlsx` or any General Chemistry II survey export.
+Semester/instructor scope applies across research views and analysis exports. Dataset
+maintenance and the complete notebook are labeled as whole-project views.
 
-## Layout
+## Scientific interpretation
 
-The page scrolls through three sections — **Check Data → Explore Results → Relationship Map** — then three tabs at the bottom: **ML Lab | Add Compound | Export**.
+- Bubble rates use confirmed yes/no; maybe, missing, and unknown are not failures.
+- Purity rates use pure/impure; not-made and unknown outcomes are excluded.
+- Properties stay missing when necessary inputs are unknown.
+- Models fit imputation independently inside each split/fold. Predictions reuse fitted values.
+- Default evaluation holds out whole compositions; row and explicit semester holdouts are available.
+- Cross-validation spread is standard deviation, not a confidence interval.
+- Scores are uncalibrated exploratory outputs. Feature importance is not causation.
+- Ionic radii use reference oxidation/coordination assumptions. Tolerance factor alone does not
+  establish a crystal structure or chemical feasibility.
 
-## Notes
+## Saving and access
 
-- Original uploaded file is never overwritten. Use Export to save cleaned data.
-- If the app shows a column-mapping warning after a Google Form change, see `DEVELOPER_NOTES.md → When the Google Form changes`.
-- ML Lab runs both Random Forest and Logistic Regression. If RF accuracy is much higher than LR on a small dataset, treat the results with caution.
+Local mode saves immutable snapshots under ignored `.catalyst/`. On a hosted server, local mode
+must be off; authenticated users receive separate storage namespaces. Anonymous users can
+download/reopen portable JSON bundles. Hosted storage needs a persistent volume and backups.
+
+Snapshots omit student contact/group columns. Free-text hypotheses and notes remain: review them
+before sharing. Original contact fields remain only in the uploaded session and require instructor
+authorization to view/export. Anonymous bundles cannot restore those fields.
+
+Instructor access requires OIDC and a verified email on the allowlist. There is no shared password.
+See [DEPLOYMENT.md](DEPLOYMENT.md).
+
+## Verification
+
+`requirements.txt` pins runtime dependencies. `requirements.lock` records the complete tested
+Python 3.13 environment, including pytest and optional browser QA tooling.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.lock
+.\.venv\Scripts\python.exe -m pytest -q
+# With Chrome installed and the preview running on port 8501:
+.\.venv\Scripts\python.exe tests/browser_smoke.py
+```
+
+See [ARCHITECTURE.md](ARCHITECTURE.md), [STUDENT_GUIDE.md](STUDENT_GUIDE.md), and
+[INSTRUCTOR_HANDOFF.md](INSTRUCTOR_HANDOFF.md).

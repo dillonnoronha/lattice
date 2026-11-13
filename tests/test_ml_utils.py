@@ -494,9 +494,10 @@ class TestTrainMLModel:
         df["BN"] = 0.5
         df["ON"] = 3.0
 
-        result = train_ml_model(df)
+        result = train_ml_model(df, evaluation="rows")
 
         assert result["ok"] is True
+        assert "Related compositions" in result["overfit_warning"]
         assert "model" in result
         assert "feature_columns" in result
         assert "rf_accuracy" in result

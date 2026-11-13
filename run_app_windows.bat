@@ -1,9 +1,15 @@
 @echo off
-title General Chemistry II Catalyst Insight Studio
-echo.
-echo Starting General Chemistry II Catalyst Insight Studio...
-echo.
-py -m pip install -r requirements.txt
-echo.
-py -m streamlit run app.py
+setlocal
+cd /d "%~dp0"
+title Catalyst Insight Studio
+if not exist ".venv\Scripts\python.exe" py -3.13 -m venv .venv
+if not exist ".venv\Scripts\python.exe" goto :error
+".venv\Scripts\python.exe" ensure_runtime.py
+if errorlevel 1 goto :error
+set CATALYST_LOCAL_MODE=1
+".venv\Scripts\python.exe" -m streamlit run app.py --server.address 127.0.0.1
+goto :end
+:error
+echo Setup failed. Install Python 3.13 and check the error above.
+:end
 pause

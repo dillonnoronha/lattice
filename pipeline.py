@@ -29,9 +29,9 @@ from __future__ import annotations
 # Build marker (bump to force Python to recompile if OneDrive serves a stale
 # __pycache__/*.pyc with an older source mtime): 2026-07-01a
 import difflib
+from contextvars import ContextVar
 import io
 import math
-import os
 import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
@@ -79,7 +79,7 @@ COMPOUND_SLOTS = [1, 2, 3, 4]
 # General Chemistry II officially uses impure -> 1 and pure -> 2; not made -> 0 is
 # included to handle older/raw survey exports safely.
 PHASE_MAP = {"not made": 0, "impure": 1, "pure": 2}
-BUBBLE_MAP = {"maybe": 0, "yes": 1, "no": 2}
+BUBBLE_MAP = {"maybe": 0, "yes": 1, "no": 2, "not tested": np.nan}
 
 # Placeholder words students/templates type into an OPTIONAL element field to
 # mean "there is no element here". Without this list these phrases leak into the
@@ -110,17 +110,9 @@ FRONT_COLUMNS = [
 # the student-facing UI never displays them.
 PRIVATE_COLUMNS = ["Email", "Name", "Members"]
 
-# ----- Shared chart styling (theme-aware) ------------------------------------
-# Defaults are the dark "lab glass" palette; set_chart_theme("light") swaps the
-# module-level values so every plot function picks up the active theme.
-CHART_INK = "#dbe4f3"        # main text on charts
-CHART_MUTED = "#8fa1bd"      # secondary text
-CHART_GRID = "rgba(148, 163, 184, 0.14)"
-CHART_ACCENT = "#38bdf8"     # sky
-CHART_ACCENT_2 = "#8b5cf6"   # violet
-CHART_HOVER_BG = "#111a2e"   # hover tooltip background
-CHART_BAR_LOW = "#1c3a5e"    # low end of sequential bar colorscales
+# Chart colors belong to the current session execution, not the server process.
 CHART_FONT = "Inter, -apple-system, 'Segoe UI', sans-serif"
+_CHART_MODE = ContextVar("catalyst_chart_mode", default="light")
 
 _CHART_THEMES = {
     "dark": {
@@ -139,9 +131,12 @@ _CHART_THEMES = {
 
 
 def set_chart_theme(mode: str) -> None:
-    """Switch every chart's colors between 'dark' and 'light' (app theme toggle)."""
+    """Set chart colors for this execution without changing other users' charts."""
+    _CHART_MODE.set("light" if mode == "light" else "dark")
 
-    globals().update(_CHART_THEMES["light" if mode == "light" else "dark"])
+
+def chart_color(name: str) -> str:
+    return _CHART_THEMES[_CHART_MODE.get()][name]
 
 # Categorical palette used across all charts.
 CHART_PALETTE = [
@@ -156,11 +151,7 @@ OUTCOME_COLORS = {
     "Missing": "#64748b", "Other / needs review": "#94a3b8",
 }
 
-# Passcode for Instructor mode (reveals the hidden contact columns inside the
-# app). Never hard-code it here: set the INSTRUCTOR_PASSCODE environment
-# variable, or add `INSTRUCTOR_PASSCODE = "..."` to .streamlit/secrets.toml
-# (git-ignored). If neither is set, Instructor mode stays locked.
-INSTRUCTOR_PASSCODE = os.environ.get("INSTRUCTOR_PASSCODE", "")
+# Instructor authorization is implemented in access.py using verified OIDC identities.
 
 # Shannon radius of O2- in six-fold coordination (Å), used by the Goldschmidt
 # tolerance factor.
@@ -291,6 +282,8 @@ def normalize_bubble_label(value: object) -> str:
         return "no"
     if key in {"maybe", "possibly", "possible", "unclear", "0"}:
         return "maybe"
+    if key in {"nottested", "notperformed"}:
+        return "not tested"
 
     return "other/needs review"
 
@@ -380,8 +373,21 @@ def public_view(df: pd.DataFrame, extra_hidden: Sequence[str] = ()) -> pd.DataFr
     itself is untouched — instructor downloads in the Export tab keep everything.
     """
 
-    hidden = set(PRIVATE_COLUMNS) | set(extra_hidden)
-    return df[[c for c in df.columns if c not in hidden]]
+    from projects import DATA_COLUMNS
+    allowed = set(DATA_COLUMNS) | {
+        "Formula", "PhaseN", "BubN", "BubbleYes", "PureYes", "PhaseLabel", "BubbleLabel",
+        "MissingDescriptors", "Row", "Field", "Issue", "Suggestion", "Value", "ZScore",
+        "Z-score", "Reason", "Original", "Corrected", "Action", "Old", "New",
+        "Column", "Z_score", "Meaning", "Change", "A_total_ratio", "B_total_ratio", "N_A_elements",
+    }
+    numeric, _ = feature_columns()
+    allowed.update(numeric)
+    # Diagnostics can embed contact information inside prose.
+    result = df
+    if "Field" in result:
+        result = result[~result["Field"].astype(str).isin(PRIVATE_COLUMNS)]
+    return result[[c for c in result if c in allowed and c not in extra_hidden]].copy()
+
 
 
 # =============================================================================
@@ -390,7 +396,7 @@ def public_view(df: pd.DataFrame, extra_hidden: Sequence[str] = ()) -> pd.DataFr
 # AtomicMass.csv provides element symbols, atomic numbers, and atomic masses. The
 # app also supports an optional Pauling electronegativity table if one is added.
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
 def load_atomic_table_from_bytes(file_bytes: Optional[bytes], file_name: str = "") -> pd.DataFrame:
     """
     Load the atomic mass table.
@@ -457,7 +463,7 @@ def load_atomic_table_from_bytes(file_bytes: Optional[bytes], file_name: str = "
     return atomic
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
 def load_en_table_from_bytes(file_bytes: Optional[bytes], file_name: str = "") -> pd.DataFrame:
     """Load an optional electronegativity table. Returns empty DataFrame if missing."""
 
@@ -488,7 +494,7 @@ def load_en_table_from_bytes(file_bytes: Optional[bytes], file_name: str = "") -
     return pd.DataFrame(columns=["Symbol", "Electronegativity"])
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
 def load_radii_table_from_bytes(file_bytes: Optional[bytes] = None, file_name: str = "") -> pd.DataFrame:
     """
     Load the Shannon ionic radii table (data/ShannonRadii.csv).
@@ -599,18 +605,22 @@ def is_placeholder_symbol(value: object) -> bool:
 # The app accepts CSV and Excel files. To improve load times, file reading is
 # cached based on the uploaded file's bytes and filename.
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
 def read_table_from_bytes(file_bytes: bytes, file_name: str) -> pd.DataFrame:
     """Read an uploaded CSV or Excel file into a DataFrame."""
 
     suffix = Path(file_name).suffix.lower()
 
     if suffix == ".csv":
-        return pd.read_csv(io.BytesIO(file_bytes))
+        return pd.read_csv(io.BytesIO(file_bytes), keep_default_na=False,
+                           dtype={"ExperimentID": str, "LabGroup": str, "Instructor": str,
+                                  "Semester": str, "ObservationNotes": str, "ExperimentDate": str})
 
     if suffix in {".xlsx", ".xlsm", ".xls"}:
         # sheet_name=0 loads the first worksheet, which matches typical class exports.
-        return pd.read_excel(io.BytesIO(file_bytes), sheet_name=0)
+        return pd.read_excel(io.BytesIO(file_bytes), sheet_name=0, keep_default_na=False,
+                             dtype={"ExperimentID": str, "LabGroup": str, "Instructor": str,
+                                    "Semester": str, "ObservationNotes": str, "ExperimentDate": str})
 
     raise ValueError("Unsupported file type. Please upload a CSV, XLSX, XLSM, or XLS file.")
 
@@ -638,7 +648,7 @@ def find_default_database() -> Optional[Path]:
     return None
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
 def read_local_table(path_string: str) -> pd.DataFrame:
     """Read a local default CSV or Excel file."""
 
@@ -771,7 +781,7 @@ def infer_slot_column(columns: Iterable[str], slot: int, field: str) -> Optional
     return None
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
 def normalize_to_long_format(raw_df: pd.DataFrame) -> tuple:
     """
     Convert the uploaded spreadsheet into one row per compound.
@@ -819,6 +829,11 @@ def normalize_to_long_format(raw_df: pd.DataFrame) -> tuple:
             "BubN": ["bubn", "bubblen", "bubblenumber", "bubbleresponsen"],
         }
         _meta_aliases: Dict[str, List[str]] = {
+            "ExperimentID": ["experimentid"],
+            "LabGroup": ["labgroup", "labgroupcode"],
+            "ExperimentDate": ["experimentdate"],
+            "Trial": ["trial", "trialnumber"],
+            "ObservationNotes": ["observationnotes"],
             "GroupNumber": ["groupnumber", "groupid", "group", "team", "groupnumberid"],
             "Email":       ["email", "emailaddress"],
             "Name":        ["name", "studentname"],
@@ -846,7 +861,8 @@ def normalize_to_long_format(raw_df: pd.DataFrame) -> tuple:
                 meta_map[out_name] = None
 
         compound_num_col = (
-            _ncols.get("compoundnum")
+            _ncols.get("slot")
+            or _ncols.get("compoundnum")
             or _ncols.get("compoundnumber")
             or _ncols.get("compound")
         )
@@ -967,8 +983,8 @@ def ratio_for_formula(row: pd.Series, symbol_col: str, ratio_col: str, required:
     Choose a formula ratio for a symbol.
 
     Required fields like A/AN and B/BN need their ratio from the spreadsheet.
-    Optional fields like AP and BP sometimes do not have ratio columns in older
-    templates, so the app assumes 1 if the symbol is present but ratio is blank.
+    Every occupied site needs a finite, positive ratio. Missing stoichiometry
+    stays unknown instead of being silently treated as one atom.
     """
 
     symbol = clean_text(row.get(symbol_col, ""))
@@ -977,8 +993,8 @@ def ratio_for_formula(row: pd.Series, symbol_col: str, ratio_col: str, required:
     if not symbol:
         return 0.0
 
-    if np.isnan(ratio) or ratio == 0:
-        return 1.0 if not required else np.nan
+    if not np.isfinite(ratio) or ratio <= 0:
+        return np.nan
 
     return ratio
 
@@ -1010,7 +1026,7 @@ def reconstruct_formula(row: pd.Series) -> str:
 
         ratio = ratio_for_formula(row, symbol_col, ratio_col, required=required)
         if np.isnan(ratio):
-            parts.append(symbol)
+            parts.append(symbol + "?")
         else:
             parts.append(f"{symbol}{format_ratio(ratio)}")
 
@@ -1087,7 +1103,7 @@ def best_name_for_email(email: object, members: object, fallback: object = "") -
     return name
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
 def clean_and_encode_data(long_df: pd.DataFrame, atomic: pd.DataFrame) -> pd.DataFrame:
     """
     Clean text fields, ratios, formula strings, and project label encodings.
@@ -1167,7 +1183,8 @@ def clean_and_encode_data(long_df: pd.DataFrame, atomic: pd.DataFrame) -> pd.Dat
     # Convert phase and bubble response into numeric labels used by charts/ML.
     df["PhaseN"] = df["P"].map(PHASE_MAP)
     df["BubN"] = df["Bub"].map(BUBBLE_MAP)
-    df["BubbleYes"] = (df["Bub"] == "yes").astype(int)
+    df["BubbleYes"] = df["Bub"].map({"yes": 1.0, "no": 0.0})
+    df["PureYes"] = df["P"].map({"pure": 1.0, "impure": 0.0})
 
     # Reconstruct formula after cleaning.
     df["Formula"] = df.apply(reconstruct_formula, axis=1)
@@ -1186,7 +1203,7 @@ def clean_and_encode_data(long_df: pd.DataFrame, atomic: pd.DataFrame) -> pd.Dat
 # Data quality is a major part of this project because students may accidentally
 # enter full names, missing ratios, invalid labels, or blank values.
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
 def validate_compound_rows(clean_df: pd.DataFrame, atomic: pd.DataFrame) -> pd.DataFrame:
     """
     Check cleaned rows against the General Chemistry II data-entry rules.
@@ -1251,8 +1268,8 @@ def validate_compound_rows(clean_df: pd.DataFrame, atomic: pd.DataFrame) -> pd.D
         # Required numeric ratios.
         for field in ["AN", "BN", "ON"]:
             value = safe_float(row.get(field))
-            if np.isnan(value):
-                add_issue(row, field, "Missing or non-numeric ratio.", "Use numbers only, such as 1, 2, 3, or 0.5.")
+            if not np.isfinite(value):
+                add_issue(row, field, "Missing, non-numeric, or non-finite ratio.", "Use numbers only, such as 1, 2, 3, or 0.5.")
             elif value <= 0:
                 add_issue(row, field, "Ratio must be greater than zero.", "Use a positive number.")
 
@@ -1260,10 +1277,10 @@ def validate_compound_rows(clean_df: pd.DataFrame, atomic: pd.DataFrame) -> pd.D
         for symbol_field, ratio_field in [("AP", "APN"), ("BP", "BPN"), ("BDP", "BDPN")]:
             symbol = clean_text(row.get(symbol_field, ""))
             ratio = safe_float(row.get(ratio_field))
-            if symbol and not np.isnan(ratio) and ratio <= 0:
-                add_issue(row, ratio_field, "Optional element ratio is zero or negative.", "Use a positive ratio or leave both optional fields blank.")
-            if not symbol and not np.isnan(ratio) and ratio > 0:
-                add_issue(row, symbol_field, f"{ratio_field} has a number but {symbol_field} is blank.", "Enter the optional element symbol or clear the ratio.")
+            if symbol and (not np.isfinite(ratio) or ratio <= 0):
+                add_issue(row, ratio_field, "Optional element needs a finite, positive ratio.", "Use a positive ratio or leave both optional fields blank.")
+            if not symbol and not np.isnan(ratio) and ratio != 0:
+                add_issue(row, symbol_field, f"{ratio_field} has a nonzero or invalid number but {symbol_field} is blank.", "Enter the optional element symbol or clear the ratio.")
 
         # Allowed labels after normalization.
         #
@@ -1282,12 +1299,12 @@ def validate_compound_rows(clean_df: pd.DataFrame, atomic: pd.DataFrame) -> pd.D
             )
         if bubble_label == "other/needs review" or bubble_label not in BUBBLE_MAP:
             raw_bubble = clean_text(row.get("Bub_raw", row.get("Bub", "")))
-            add_issue(row, "Bub", f"Unrecognized bubble response: '{raw_bubble}'.", "Use exactly: yes, no, or maybe.")
+            add_issue(row, "Bub", f"Unrecognized bubble response: '{raw_bubble}'.", "Use yes, no, maybe, or not tested.")
 
     return pd.DataFrame(issues)
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
 def remove_invalid_element_rows(df: pd.DataFrame, atomic: pd.DataFrame) -> tuple:
     """
     Drop rows that contain an element symbol which is not on the periodic table.
@@ -1450,7 +1467,7 @@ def apply_element_fixes(long_df: pd.DataFrame, fixes: Dict[str, str]) -> tuple:
     return df, pd.DataFrame(log, columns=cols)
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
 def detect_numeric_outliers(df: pd.DataFrame, z_threshold: float = 3.0) -> pd.DataFrame:
     """
     Flag unusual numeric values using z-scores.
@@ -1510,8 +1527,10 @@ def lookup_atomic_value(atomic_index: pd.DataFrame, symbol: object, column: str)
 
 
 def weighted_average(values: Sequence[float], weights: Sequence[float]) -> float:
-    """Calculate a weighted average while ignoring missing values."""
+    """A site property is unknown when an occupied constituent is unknown."""
 
+    if any(not np.isfinite(v) or not np.isfinite(w) for v, w in zip(values, weights)):
+        return np.nan
     pairs = [(v, w) for v, w in zip(values, weights) if not np.isnan(v) and not np.isnan(w) and w > 0]
     if not pairs:
         return np.nan
@@ -1521,7 +1540,7 @@ def weighted_average(values: Sequence[float], weights: Sequence[float]) -> float
     return sum(v * w for v, w in pairs) / total_weight
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
 def add_chemical_descriptors(clean_df: pd.DataFrame, atomic: pd.DataFrame, en_table: pd.DataFrame,
                              radii_table: Optional[pd.DataFrame] = None) -> pd.DataFrame:
     """
@@ -1539,6 +1558,15 @@ def add_chemical_descriptors(clean_df: pd.DataFrame, atomic: pd.DataFrame, en_ta
         return clean_df.copy()
 
     df = clean_df.copy()
+
+    # Descriptor utilities also accept minimally cleaned long-format records.
+    for column in ["A", "AP", "B", "BP", "BDP", "O"]:
+        if column not in df:
+            df[column] = ""
+        df[column] = df[column].fillna("")
+    for column in ["AN", "APN", "BN", "BPN", "BDPN", "ON"]:
+        if column not in df:
+            df[column] = np.nan
 
     atomic_index = atomic.set_index("Symbol")
     en_index = en_table.set_index("Symbol") if not en_table.empty and "Symbol" in en_table.columns else pd.DataFrame()
@@ -1612,9 +1640,10 @@ def add_chemical_descriptors(clean_df: pd.DataFrame, atomic: pd.DataFrame, en_ta
                 continue
             mass = safe_float(row.get(f"{symbol_col}_Mass"))
             ratio = ratio_for_formula(row, symbol_col, ratio_col, required=required)
-            if not np.isnan(mass) and not np.isnan(ratio):
-                total += mass * ratio
-                has_value = True
+            if not np.isfinite(mass) or not np.isfinite(ratio):
+                return np.nan
+            total += mass * ratio
+            has_value = True
         return total if has_value else np.nan
 
     df["FormulaMass"] = df.apply(formula_mass, axis=1)
@@ -1660,14 +1689,13 @@ def add_chemical_descriptors(clean_df: pd.DataFrame, atomic: pd.DataFrame, en_ta
     # binary Mixed_*_site flags do not.
     def _dopant_fraction(row: pd.Series, main: Tuple[str, str], extras: Sequence[Tuple[str, str]]) -> float:
         main_ratio = ratio_for_formula(row, main[0], main[1], required=True)
-        main_ratio = 0.0 if np.isnan(main_ratio) else main_ratio
         extra_ratio = sum(
             ratio_for_formula(row, sym, rat)
             for sym, rat in extras
             if clean_text(row.get(sym, ""))
         )
         total = main_ratio + extra_ratio
-        return float(extra_ratio / total) if total > 0 else 0.0
+        return float(extra_ratio / total) if np.isfinite(total) and total > 0 else np.nan
 
     df["A_mix_fraction"] = df.apply(lambda r: _dopant_fraction(r, ("A", "AN"), [("AP", "APN")]), axis=1)
     df["B_mix_fraction"] = df.apply(
@@ -1702,14 +1730,11 @@ def add_chemical_descriptors(clean_df: pd.DataFrame, atomic: pd.DataFrame, en_ta
         df["Tolerance_factor"] = (df["A_site_radius"] + OXYGEN_RADIUS) / (
             math.sqrt(2) * (df["B_site_radius"] + OXYGEN_RADIUS))
 
-    # Median-fill sparse physics descriptors so ML's fillna(0) never injects a
-    # nonsense zero (t = 0 or EN = 0 would be a strong, wrong signal).
-    for sparse_col in ["Tolerance_factor", "A_site_radius", "B_site_radius",
-                       "A_avg_EN", "B_avg_EN", "EN_difference_B_minus_A"]:
-        if sparse_col in df.columns:
-            median = pd.to_numeric(df[sparse_col], errors="coerce").median()
-            if not np.isnan(median):
-                df[sparse_col] = df[sparse_col].fillna(median)
+    # Keep missing physics descriptors unknown in the scientific record.
+    # The fitted ML pipeline imputes training medians independently per split.
+    physics = [c for c in ["Tolerance_factor", "A_site_radius", "B_site_radius",
+               "A_avg_EN", "B_avg_EN", "EN_difference_B_minus_A"] if c in df]
+    df["MissingDescriptors"] = df[physics].isna().sum(axis=1) if physics else 0
 
     return df
 
@@ -1736,7 +1761,9 @@ def summarize_by_element(df: pd.DataFrame, element_col: str, min_rows: int = 1) 
             compounds=("Formula", "count"),
             bubble_yes_rate=("BubbleYes", "mean"),
             avg_bubble_number=("BubN", "mean"),
-            pure_rate=("PhaseN", lambda s: (s == 2).mean()),
+            pure_rate=("PhaseN", lambda s: s.map({1: 0.0, 2: 1.0}).mean()),
+            bubble_observed=("BubbleYes", "count"),
+            phase_observed=("PhaseN", lambda s: s.isin([1, 2]).sum()),
             avg_formula_mass=("FormulaMass", "mean"),
         )
         .reset_index()
@@ -1796,28 +1823,28 @@ def _apply_chart_theme(fig: go.Figure, title: str = "", height: int = 420) -> go
     # "undefined" over the top-left of the chart.
     if title:
         fig.update_layout(title={"text": title,
-                                 "font": {"size": 16, "color": CHART_INK, "family": CHART_FONT}})
+                                 "font": {"size": 16, "color": chart_color("CHART_INK"), "family": CHART_FONT}})
     else:
         fig.update_layout(title_text="")
 
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font={"family": CHART_FONT, "color": CHART_INK, "size": 12},
+        font={"family": CHART_FONT, "color": chart_color("CHART_INK"), "size": 12},
         height=height,
         margin={"l": 10, "r": 10, "t": 48 if title else 16, "b": 10},
         hoverlabel={
-            "bgcolor": CHART_HOVER_BG,
-            "bordercolor": CHART_ACCENT,
-            "font": {"family": CHART_FONT, "color": CHART_INK, "size": 12},
+            "bgcolor": chart_color("CHART_HOVER_BG"),
+            "bordercolor": chart_color("CHART_ACCENT"),
+            "font": {"family": CHART_FONT, "color": chart_color("CHART_INK"), "size": 12},
         },
         colorway=CHART_PALETTE,
-        legend={"bgcolor": "rgba(0,0,0,0)", "font": {"color": CHART_MUTED}},
+        legend={"bgcolor": "rgba(0,0,0,0)", "font": {"color": chart_color("CHART_MUTED")}},
     )
-    fig.update_xaxes(gridcolor=CHART_GRID, zerolinecolor=CHART_GRID, linecolor=CHART_GRID,
-                     tickfont={"color": CHART_MUTED})
-    fig.update_yaxes(gridcolor=CHART_GRID, zerolinecolor=CHART_GRID, linecolor=CHART_GRID,
-                     tickfont={"color": CHART_MUTED})
+    fig.update_xaxes(gridcolor=chart_color("CHART_GRID"), zerolinecolor=chart_color("CHART_GRID"), linecolor=chart_color("CHART_GRID"),
+                     tickfont={"color": chart_color("CHART_MUTED")})
+    fig.update_yaxes(gridcolor=chart_color("CHART_GRID"), zerolinecolor=chart_color("CHART_GRID"), linecolor=chart_color("CHART_GRID"),
+                     tickfont={"color": chart_color("CHART_MUTED")})
     return fig
 
 
@@ -1841,13 +1868,13 @@ def plot_bar_chart(data: pd.DataFrame, x_col: str, y_col: str, title: str, ylabe
             orientation="h",
             marker={
                 "color": values,
-                "colorscale": [[0.0, CHART_BAR_LOW], [1.0, CHART_ACCENT]],
+                "colorscale": [[0.0, chart_color("CHART_BAR_LOW")], [1.0, chart_color("CHART_ACCENT")]],
                 "line": {"width": 0},
             },
             hovertemplate="<b>%{y}</b><br>" + ylabel + ": %{x:.3f}<extra></extra>",
         )
     )
-    fig.update_xaxes(title_text=ylabel, title_font={"color": CHART_MUTED, "size": 12})
+    fig.update_xaxes(title_text=ylabel, title_font={"color": chart_color("CHART_MUTED"), "size": 12})
     height = max(300, 30 * len(plot_data) + 110)
     return _apply_chart_theme(fig, title=title, height=height)
 
@@ -1856,7 +1883,7 @@ def numeric_correlation_table(df: pd.DataFrame) -> pd.DataFrame:
     """Create a correlation matrix from the numeric columns used in the app."""
 
     candidates = [
-        "BubbleYes", "BubN", "PhaseN",
+        "BubbleYes", "PureYes",
         "AN", "APN", "BN", "BPN", "BDPN", "ON",
         "A_avg_Z", "B_avg_Z", "A_avg_mass", "B_avg_mass",
         "FormulaMass", "O_to_cation_ratio", "B_to_A_ratio",
@@ -1874,7 +1901,7 @@ def numeric_correlation_table(df: pd.DataFrame) -> pd.DataFrame:
     if numeric.shape[1] < 2:
         return pd.DataFrame()
 
-    return numeric.corr(numeric_only=True)
+    return numeric.corr(numeric_only=True, min_periods=3)
 
 
 def friendly_label(name: str) -> str:
@@ -1938,7 +1965,7 @@ FEATURE_GLOSSARY: Dict[str, str] = {
     "A_avg_EN": "Average Pauling electronegativity of the A-site — how strongly its atoms pull electrons.",
     "B_avg_EN": "Average Pauling electronegativity of the B-site.",
     "EN_difference_B_minus_A": "B-site electronegativity minus A-site electronegativity — bigger = more ionic-character contrast between sites.",
-    "Tolerance_factor": "Goldschmidt tolerance factor t = (r_A + r_O) / (√2 (r_B + r_O)) from Shannon ionic radii. t ≈ 0.9–1.0 fits an ideal cubic perovskite; lower = distorted, higher = hexagonal tendencies. Radii assume typical oxidation states; missing radii are filled with the class median.",
+    "Tolerance_factor": "Goldschmidt tolerance factor t = (r_A + r_O) / (√2 (r_B + r_O)) from Shannon ionic radii. t ≈ 0.9–1.0 fits an ideal cubic perovskite; lower = distorted, higher = hexagonal tendencies. Radii assume typical oxidation states; missing radii remain unknown in displays; models use training-only imputation.",
     "A_site_radius": "Ratio-weighted average Shannon ionic radius of the A-site (12-coordinate, Å).",
     "B_site_radius": "Ratio-weighted average Shannon ionic radius of the B-site (6-coordinate, Å).",
 }
@@ -1956,7 +1983,7 @@ def glossary_table(features: Sequence[str]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
 def mixing_summary(df: pd.DataFrame) -> pd.DataFrame:
     """
     Summarize outcomes for single-element vs mixed-cation compounds.
@@ -1991,7 +2018,7 @@ def mixing_summary(df: pd.DataFrame) -> pd.DataFrame:
         if column not in sub_df.columns:
             return 0.0
         mean = pd.to_numeric(sub_df[column], errors="coerce").mean()
-        return 0.0 if pd.isna(mean) else round(float(mean) * 100, 1)
+        return float("nan") if pd.isna(mean) else round(float(mean) * 100, 1)
 
     rows = []
     order = ["Single-element sites", "Mixed A-site only", "Mixed B-site only", "Mixed A & B sites"]
@@ -2003,7 +2030,9 @@ def mixing_summary(df: pd.DataFrame) -> pd.DataFrame:
             "Compound type": category,
             "Compounds": int(len(sub)),
             "Bubble yes %": _pct(sub, "BubbleYes"),
-            "Pure %": round(float((pd.to_numeric(sub["PhaseN"], errors="coerce") == 2).mean()) * 100, 1),
+            "Pure %": round(float(sub["PhaseN"].map({1: 0.0, 2: 1.0}).mean()) * 100, 1),
+            "Confirmed bubble outcomes": int(sub["BubbleYes"].notna().sum()),
+            "Confirmed phase outcomes": int(sub["PhaseN"].isin([1, 2]).sum()),
             "Avg A′ share of A-site %": _pct(sub, "A_mix_fraction"),
             "Avg B′/B″ share of B-site %": _pct(sub, "B_mix_fraction"),
         })
@@ -2030,8 +2059,8 @@ def plot_heatmap(corr: pd.DataFrame) -> go.Figure:
         colorscale="RdBu", reversescale=True,   # blue = -1, red = +1 (matches old map)
         xgap=2, ygap=2,
         colorbar={
-            "title": {"text": "Correlation", "font": {"color": CHART_MUTED}},
-            "tickfont": {"color": CHART_MUTED},
+            "title": {"text": "Correlation", "font": {"color": chart_color("CHART_MUTED")}},
+            "tickfont": {"color": chart_color("CHART_MUTED")},
             "thickness": 12, "outlinewidth": 0,
         },
         hovertemplate="<b>%{y} × %{x}</b><br>correlation = %{z:.2f}<extra></extra>",
@@ -2113,7 +2142,7 @@ def _build_periodic_positions() -> Dict[str, Tuple[int, int]]:
 PERIODIC_POSITIONS = _build_periodic_positions()
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
 def element_outcome_summary(df: pd.DataFrame, scope: str = "any") -> pd.DataFrame:
     """
     Per-element outcome stats for the periodic-table view.
@@ -2142,7 +2171,9 @@ def element_outcome_summary(df: pd.DataFrame, scope: str = "any") -> pd.DataFram
     grouped = melted.groupby("Symbol").agg(
         Compounds=("_row_id", "count"),
         BubbleYesPct=("BubbleYes", lambda s: float(pd.to_numeric(s, errors="coerce").mean()) * 100),
-        PurePct=("PhaseN", lambda s: float((pd.to_numeric(s, errors="coerce") == 2).mean()) * 100),
+        PurePct=("PhaseN", lambda s: float(s.map({1: 0.0, 2: 1.0}).mean()) * 100),
+        BubbleObserved=("BubbleYes", "count"),
+        PhaseObserved=("PhaseN", lambda s: s.isin([1, 2]).sum()),
     ).reset_index()
     return grouped.round(1)
 
@@ -2165,7 +2196,7 @@ def plot_periodic_heat(summary: pd.DataFrame, value_col: str = "BubbleYesPct") -
 
     for sym, (row, col) in PERIODIC_POSITIONS.items():
         r, c = row - 1, col - 1
-        if sym in stats:
+        if sym in stats and pd.notna(stats[sym][value_col]):
             s = stats[sym]
             z[r][c] = float(s[value_col])
             text[r][c] = sym
@@ -2183,8 +2214,8 @@ def plot_periodic_heat(summary: pd.DataFrame, value_col: str = "BubbleYesPct") -
         colorscale=[[0.0, "#f87171"], [0.5, "#fbbf24"], [1.0, "#34d399"]],
         xgap=3, ygap=3, hoverongaps=False,
         texttemplate="%{text}", textfont={"size": 11, "color": "#0b1120"},
-        colorbar={"title": {"text": value_title, "font": {"color": CHART_MUTED}},
-                  "tickfont": {"color": CHART_MUTED}, "thickness": 12, "outlinewidth": 0},
+        colorbar={"title": {"text": value_title, "font": {"color": chart_color("CHART_MUTED")}},
+                  "tickfont": {"color": chart_color("CHART_MUTED")}, "thickness": 12, "outlinewidth": 0},
         hovertemplate="<b>%{text}</b><br>%{customdata[0]} compounds"
                       "<br>bubble yes: %{customdata[1]:.0f}%"
                       "<br>pure: %{customdata[2]:.0f}%<extra></extra>",
@@ -2206,7 +2237,7 @@ def plot_confusion(confusion: Dict[str, int]) -> go.Figure:
         z=z,
         x=["Predicted no", "Predicted yes"],
         y=["Actual no", "Actual yes"],
-        colorscale=[[0.0, CHART_BAR_LOW], [1.0, CHART_ACCENT]],
+        colorscale=[[0.0, chart_color("CHART_BAR_LOW")], [1.0, chart_color("CHART_ACCENT")]],
         xgap=3, ygap=3, showscale=False,
         texttemplate="%{z}", textfont={"size": 16},
         hovertemplate="%{y} · %{x}: <b>%{z}</b><extra></extra>",
@@ -2225,7 +2256,7 @@ def plot_what_if(sweep: pd.DataFrame, x_label: str, current_value: float) -> go.
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=sweep["value"], y=sweep["bubble_prob"], mode="lines+markers",
-        name="Bubble probability", line={"color": CHART_ACCENT, "width": 3},
+        name="Bubble probability", line={"color": chart_color("CHART_ACCENT"), "width": 3},
         marker={"size": 6},
         hovertemplate=x_label + " = %{x:g}<br>bubble: <b>%{y:.0%}</b><extra></extra>",
     ))
@@ -2238,7 +2269,7 @@ def plot_what_if(sweep: pd.DataFrame, x_label: str, current_value: float) -> go.
         ))
     fig.add_vline(x=current_value, line_dash="dash", line_color="#94a3b8",
                   annotation_text="current", annotation_font_color="#94a3b8")
-    fig.update_xaxes(title_text=x_label, title_font={"color": CHART_MUTED})
+    fig.update_xaxes(title_text=x_label, title_font={"color": chart_color("CHART_MUTED")})
     fig.update_yaxes(range=[-0.02, 1.02], tickformat=".0%")
     fig.update_layout(legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "x": 0})
     fig = _apply_chart_theme(fig, height=380)
@@ -2260,16 +2291,23 @@ def nearest_neighbors(df: pd.DataFrame, pred_row: pd.DataFrame, k: int = 5) -> p
     if df.empty or not feats:
         return pd.DataFrame()
 
-    base = df[feats].apply(pd.to_numeric, errors="coerce")
+    df = df.reset_index(drop=True)
+    base = df[feats].apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
+    target = pd.to_numeric(pred_row.iloc[0][feats], errors="coerce").replace([np.inf, -np.inf], np.nan)
+    # Compare only measured, varying dimensions available for the candidate.
+    usable = base.notna().any() & base.nunique().gt(1) & target.notna()
+    base = base.loc[:, usable]
+    target = target[usable]
+    if base.empty:
+        return pd.DataFrame()
     means = base.mean()
     stds = base.std(ddof=0).replace({0: 1.0}).fillna(1.0)
-    base_z = (base.fillna(means) - means) / stds
-
-    target = pd.to_numeric(pred_row.iloc[0][feats], errors="coerce")
-    target_z = (target.fillna(means) - means) / stds
-
+    # Require a common set of dimensions; missing measurements are not matches.
+    complete = base.notna().all(axis=1)
+    base_z = (base.loc[complete] - means) / stds
+    target_z = (target - means) / stds
     dist = np.sqrt(((base_z - target_z) ** 2).sum(axis=1))
-    nearest = dist.nsmallest(int(k))
+    nearest = dist.nsmallest(max(0, int(k)))
 
     out = pd.DataFrame({
         "Formula": df.loc[nearest.index, "Formula"] if "Formula" in df.columns else "",
@@ -2277,65 +2315,42 @@ def nearest_neighbors(df: pd.DataFrame, pred_row: pd.DataFrame, k: int = 5) -> p
         "Bubble": df.loc[nearest.index, "BubbleLabel"] if "BubbleLabel" in df.columns else "",
         "Phase": df.loc[nearest.index, "PhaseLabel"] if "PhaseLabel" in df.columns else "",
         "Distance": nearest.round(2),
+        "Descriptors compared": len(base.columns),
     })
     return out.reset_index(drop=True)
 
 
 def find_merge_duplicates(existing: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
-    """
-    Rows in `new` that already appear in `existing` (New Semester merge check).
-
-    Two rows match when group, semester, slot, composition, and outcomes are all
-    identical after trimming/lowercasing. Returns the duplicate rows from `new`.
-    """
-
-    key_cols = [c for c in ["GroupNumber", "Semester", "Slot", "A", "AN", "B", "BN",
-                            "ON", "P", "Bub"] if c in existing.columns and c in new.columns]
-    if existing.empty or new.empty or len(key_cols) < 4:
-        return pd.DataFrame()
-
-    def _keys(frame: pd.DataFrame) -> pd.Series:
-        parts = [frame[c].astype(str).str.strip().str.lower() for c in key_cols]
-        out = parts[0]
-        for p in parts[1:]:
-            out = out + "|" + p
-        return out
-
-    existing_keys = set(_keys(existing))
-    new_keys = _keys(new)
-    return new[new_keys.isin(existing_keys)].copy()
+    """Only unchanged records with the same explicit experiment ID are duplicates."""
+    from submissions import duplicate_keys
+    if existing.empty or new.empty:
+        return new.iloc[:0].copy()
+    known = {key for key in duplicate_keys(existing) if key is not None}
+    keys = duplicate_keys(new)
+    return new[[key is not None and key in known for key in keys]].copy()
 
 
 def combine_long_tables(frames: Sequence[pd.DataFrame],
                         drop_exact_duplicates: bool = True) -> Tuple[pd.DataFrame, int]:
+    """Combine files without confusing independent trials with duplicate uploads.
+
+    Legacy records without explicit experiment IDs are preserved. Changed versions
+    of an ID are also retained for review; callers can use conflicting_experiments.
     """
-    Concatenate several long-format tables (instructor Combine tab).
-
-    Each student can download their own data from the app; this stitches those
-    files back into ONE master table. When drop_exact_duplicates is True, rows
-    that match on group, semester, slot, composition, and outcomes (after
-    trimming/lowercasing) are kept once — so uploading overlapping files is safe.
-
-    Returns (combined_df, n_duplicates_removed).
-    """
-
+    from submissions import duplicate_keys
     frames = [f for f in frames if f is not None and not f.empty]
     if not frames:
         return pd.DataFrame(), 0
-
     merged = pd.concat(frames, ignore_index=True)
     if not drop_exact_duplicates:
         return merged, 0
-
-    key_cols = [c for c in ["GroupNumber", "Semester", "Slot", "A", "AN", "AP", "APN",
-                            "B", "BN", "BP", "BPN", "BDP", "BDPN", "ON", "P", "Bub"]
-                if c in merged.columns]
-    if len(key_cols) < 4:
-        return merged, 0
-
-    normalized = merged[key_cols].astype(str).apply(lambda s: s.str.strip().str.lower())
-    keep = ~normalized.duplicated(keep="first")
-    return merged[keep].reset_index(drop=True), int((~keep).sum())
+    seen, keep = set(), []
+    for key in duplicate_keys(merged):
+        duplicate = key is not None and key in seen
+        keep.append(not duplicate)
+        if key is not None:
+            seen.add(key)
+    return merged[keep].reset_index(drop=True), len(keep) - sum(keep)
 
 
 def _report_table(df: Optional[pd.DataFrame], max_rows: int = 12) -> str:
@@ -2531,247 +2546,19 @@ def build_feature_matrix(
     return features
 
 
-@st.cache_data(show_spinner=False)
-def train_ml_model(df: pd.DataFrame, use_phase: bool = True, use_mass: bool = True, random_state: int = 42) -> dict:
-    """
-    Train a Random Forest and a Logistic Regression model to predict Bubble = yes.
-
-    Both models share the same train/test split so accuracy numbers are directly
-    comparable. The RF model is used for predictions; LR serves as a sanity check.
-
-    Overfitting warning is raised when RF accuracy is suspiciously high relative
-    to LR, or when RF accuracy exceeds 85% on fewer than 100 labeled rows.
-
-    Returns a dict with both models' results, or {"ok": False, "message": ...}.
-    """
-
-    if not SKLEARN_AVAILABLE:
-        return {"ok": False, "message": "scikit-learn is not installed. Install requirements.txt to use ML Lab."}
-
-    model_df = df.dropna(subset=["BubbleYes"]).copy()
-    model_df = model_df[model_df["Bub"].isin(["yes", "no", "maybe"])]
-
-    if len(model_df) < 10:
-        return {
-            "ok": False,
-            "message": "ML Lab needs at least 10 labeled compound rows. Upload more class data or use the app for cleaning/exploration first.",
-        }
-
-    if model_df["BubbleYes"].nunique() < 2:
-        return {
-            "ok": False,
-            "message": "ML Lab needs both bubble=yes and bubble≠yes examples. The current data only has one class.",
-        }
-
-    X = build_feature_matrix(model_df, use_phase=use_phase, use_mass=use_mass)
-    y = model_df["BubbleYes"].astype(int)
-
-    stratify = y if y.value_counts().min() >= 2 else None
-    test_size = 0.25 if len(model_df) >= 20 else 0.35
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=random_state, stratify=stratify
-    )
-
-    # Random Forest — used for final predictions and feature importance.
-    rf = RandomForestClassifier(
-        n_estimators=150,
-        max_depth=7,
-        min_samples_leaf=2,
-        random_state=random_state,
-        n_jobs=-1,
-        class_weight="balanced_subsample",
-    )
-    rf.fit(X_train, y_train)
-    rf_preds = rf.predict(X_test)
-    rf_accuracy = accuracy_score(y_test, rf_preds)
-    rf_precision = precision_score(y_test, rf_preds, zero_division=0)
-    rf_recall = recall_score(y_test, rf_preds, zero_division=0)
-    rf_f1 = f1_score(y_test, rf_preds, zero_division=0)
-
-    # Test-set confusion matrix: how the held-out predictions actually landed.
-    cm = confusion_matrix(y_test, rf_preds, labels=[0, 1])
-    confusion = {"tn": int(cm[0][0]), "fp": int(cm[0][1]),
-                 "fn": int(cm[1][0]), "tp": int(cm[1][1])}
-
-    # Stratified k-fold cross-validation: a more honest accuracy estimate than a
-    # single split on a small dataset. Skipped when a class is too rare to fold.
-    cv_mean = cv_std = None
-    cv_folds = 5 if (y.value_counts().min() >= 5 and len(y) >= 50) else \
-               3 if y.value_counts().min() >= 3 else 0
-    if cv_folds:
-        cv_model = RandomForestClassifier(
-            n_estimators=150, max_depth=7, min_samples_leaf=2,
-            random_state=random_state, n_jobs=-1, class_weight="balanced_subsample",
-        )
-        skf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
-        scores = cross_val_score(cv_model, X, y, cv=skf, scoring="accuracy")
-        cv_mean, cv_std = float(scores.mean()), float(scores.std())
-
-    importance = pd.DataFrame(
-        {"Feature": X.columns, "Importance": rf.feature_importances_}
-    ).sort_values("Importance", ascending=False)
-    importance = importance[importance["Importance"] > 0].head(12)
-
-    # Logistic Regression — simpler model used as a sanity check.
-    # StandardScaler is required because LR is sensitive to feature scale.
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-
-    lr = LogisticRegression(
-        max_iter=1000,
-        random_state=random_state,
-        class_weight="balanced",
-    )
-    lr.fit(X_train_scaled, y_train)
-    lr_accuracy = accuracy_score(y_test, lr.predict(X_test_scaled))
-
-    # Baseline: a naive model that always predicts the majority class.
-    majority_class = int(y_train.mode()[0])
-    baseline_preds = [majority_class] * len(y_test)
-    baseline_accuracy = accuracy_score(y_test, baseline_preds)
-
-    # Class balance across the full labeled dataset.
-    yes_count = int((y == 1).sum())
-    no_count = int((y == 0).sum())
-    yes_rate = yes_count / len(y) if len(y) > 0 else 0.0
-
-    # Overfitting warning: RF >> LR on a small dataset is a red flag.
-    overfit_warning = None
-    if rf_accuracy - lr_accuracy > 0.15:
-        overfit_warning = (
-            f"Random Forest ({rf_accuracy:.0%}) is more than 15 points ahead of "
-            f"Logistic Regression ({lr_accuracy:.0%}). On a small dataset this often "
-            "means the RF memorized the training data. Treat feature importance and "
-            "predictions with extra caution."
-        )
-    elif rf_accuracy > 0.85 and len(model_df) < 100:
-        overfit_warning = (
-            f"RF accuracy is {rf_accuracy:.0%} with only {len(model_df)} labeled rows. "
-            "High accuracy on very small datasets is often a sign of overfitting. "
-            "The Logistic Regression result is likely more reliable here."
-        )
-
-    return {
-        "ok": True,
-        "model": rf,
-        "scaler": scaler,
-        "feature_columns": list(X.columns),
-        "rf_accuracy": float(rf_accuracy),
-        "rf_precision": float(rf_precision),
-        "rf_recall": float(rf_recall),
-        "rf_f1": float(rf_f1),
-        "lr_accuracy": float(lr_accuracy),
-        "baseline_accuracy": float(baseline_accuracy),
-        "yes_count": yes_count,
-        "no_count": no_count,
-        "yes_rate": float(yes_rate),
-        "training_rows": len(X_train),
-        "testing_rows": len(X_test),
-        "importance": importance,
-        "overfit_warning": overfit_warning,
-        "confusion": confusion,
-        "cv_mean": cv_mean,
-        "cv_std": cv_std,
-        "cv_folds": cv_folds,
-    }
+@st.cache_data(show_spinner=False, max_entries=8)
+def train_ml_model(df: pd.DataFrame, use_phase: bool = False, use_mass: bool = False,
+                   random_state: int = 42, evaluation: str = "composition",
+                   holdout_semester: str = "") -> dict:
+    from modeling import evaluate
+    return evaluate(df, "bubble", use_phase, use_mass, random_state, evaluation, holdout_semester)
 
 
-@st.cache_data(show_spinner=False)
-def train_purity_model(df: pd.DataFrame, use_mass: bool = True, random_state: int = 42) -> dict:
-    """
-    Train a Random Forest to predict whether a compound comes out PURE (#14).
-
-    Mirrors train_ml_model but the target is purity (pure = 1, impure/not made = 0).
-    Phase is never used as an input here because it IS the thing being predicted.
-
-    Returns a dict with results, or {"ok": False, "message": ...}.
-    """
-
-    if not SKLEARN_AVAILABLE:
-        return {"ok": False, "message": "scikit-learn is not installed. Install requirements.txt to use ML Lab."}
-
-    # Keep only rows whose phase was understood (pure / impure / not made).
-    model_df = df[df["P"].isin(["pure", "impure", "not made"])].copy()
-    if model_df.empty:
-        return {"ok": False, "message": "No rows have a recognized phase label yet."}
-
-    model_df["IsPure"] = (model_df["P"] == "pure").astype(int)
-
-    if len(model_df) < 10:
-        return {"ok": False, "message": "Purity model needs at least 10 rows with a known phase."}
-    if model_df["IsPure"].nunique() < 2:
-        return {"ok": False, "message": "Purity model needs both pure and not-pure examples."}
-
-    # use_phase=False so PhaseN (the answer) is never fed in as a feature.
-    X = build_feature_matrix(model_df, use_phase=False, use_mass=use_mass)
-    y = model_df["IsPure"].astype(int)
-
-    stratify = y if y.value_counts().min() >= 2 else None
-    test_size = 0.25 if len(model_df) >= 20 else 0.35
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=random_state, stratify=stratify
-    )
-
-    rf = RandomForestClassifier(
-        n_estimators=150, max_depth=7, min_samples_leaf=2,
-        random_state=random_state, n_jobs=-1, class_weight="balanced_subsample",
-    )
-    rf.fit(X_train, y_train)
-    preds = rf.predict(X_test)
-    accuracy = accuracy_score(y_test, preds)
-    precision = precision_score(y_test, preds, zero_division=0)
-    recall = recall_score(y_test, preds, zero_division=0)
-
-    cv_mean = cv_std = None
-    cv_folds = 5 if (y.value_counts().min() >= 5 and len(y) >= 50) else \
-               3 if y.value_counts().min() >= 3 else 0
-    if cv_folds:
-        cv_model = RandomForestClassifier(
-            n_estimators=150, max_depth=7, min_samples_leaf=2,
-            random_state=random_state, n_jobs=-1, class_weight="balanced_subsample",
-        )
-        skf = StratifiedKFold(n_splits=cv_folds, shuffle=True, random_state=random_state)
-        scores = cross_val_score(cv_model, X, y, cv=skf, scoring="accuracy")
-        cv_mean, cv_std = float(scores.mean()), float(scores.std())
-
-    importance = pd.DataFrame(
-        {"Feature": X.columns, "Importance": rf.feature_importances_}
-    ).sort_values("Importance", ascending=False)
-    importance = importance[importance["Importance"] > 0].head(12)
-
-    majority_class = int(y_train.mode()[0])
-    baseline_accuracy = accuracy_score(y_test, [majority_class] * len(y_test))
-
-    pure_count = int((y == 1).sum())
-    impure_count = int((y == 0).sum())
-    pure_rate = pure_count / len(y) if len(y) else 0.0
-
-    overfit_warning = None
-    if accuracy > 0.85 and len(model_df) < 100:
-        overfit_warning = (
-            f"Purity accuracy is {accuracy:.0%} with only {len(model_df)} rows. "
-            "High accuracy on a small dataset can mean overfitting — treat as a hint, not proof."
-        )
-
-    return {
-        "ok": True,
-        "model": rf,
-        "feature_columns": list(X.columns),
-        "accuracy": float(accuracy),
-        "precision": float(precision),
-        "recall": float(recall),
-        "baseline_accuracy": float(baseline_accuracy),
-        "pure_count": pure_count,
-        "impure_count": impure_count,
-        "pure_rate": float(pure_rate),
-        "importance": importance,
-        "overfit_warning": overfit_warning,
-        "cv_mean": cv_mean,
-        "cv_std": cv_std,
-        "cv_folds": cv_folds,
-    }
+@st.cache_data(show_spinner=False, max_entries=8)
+def train_purity_model(df: pd.DataFrame, use_mass: bool = False, random_state: int = 42,
+                       evaluation: str = "composition", holdout_semester: str = "") -> dict:
+    from modeling import evaluate
+    return evaluate(df, "purity", False, use_mass, random_state, evaluation, holdout_semester)
 
 
 def make_single_prediction_row(
@@ -2842,7 +2629,7 @@ PCA_FEATURE_COLUMNS = [
 ]
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
 def compute_pca(df: pd.DataFrame, n_clusters: int = 0, random_state: int = 42) -> dict:
     """
     Project compounds onto their first two principal components.
@@ -2864,10 +2651,13 @@ def compute_pca(df: pd.DataFrame, n_clusters: int = 0, random_state: int = 42) -
         return {"ok": False, "message": "Not enough numeric features to run PCA."}
 
     # Fill gaps with each column's mean, then drop any column that is still empty.
-    data = df[feats].apply(pd.to_numeric, errors="coerce")
+    df = df.reset_index(drop=True)
+    data = df[feats].apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
+    data = data.loc[data.notna().any(axis=1)]
     data = data.fillna(data.mean(numeric_only=True)).dropna(axis=1, how="any")
+    data = data.loc[:, data.nunique().gt(1)]
     if data.shape[1] < 2 or len(data) < 3:
-        return {"ok": False, "message": "Not enough complete rows/features to run PCA."}
+        return {"ok": False, "message": "PCA needs at least three measured rows and two varying numeric descriptors."}
 
     from sklearn.preprocessing import StandardScaler
     from sklearn.decomposition import PCA
@@ -2880,7 +2670,7 @@ def compute_pca(df: pd.DataFrame, n_clusters: int = 0, random_state: int = 42) -
     for out_col, src_col in [("Formula", "Formula"), ("Bubble", "BubbleLabel"), ("Phase", "PhaseLabel")]:
         out[out_col] = df.loc[data.index, src_col] if src_col in df.columns else ""
 
-    if n_clusters and n_clusters >= 2 and len(out) >= n_clusters:
+    if n_clusters and n_clusters >= 2 and len(np.unique(scaled, axis=0)) >= n_clusters:
         from sklearn.cluster import KMeans
         km = KMeans(n_clusters=int(n_clusters), n_init=10, random_state=random_state)
         out["Cluster"] = km.fit_predict(scaled).astype(str)
@@ -2913,7 +2703,7 @@ def plot_pca_scatter(coords: pd.DataFrame, color_by: str = "Bubble") -> go.Figur
     if color_by is None:
         fig.add_trace(go.Scattergl(
             x=coords["PC1"], y=coords["PC2"], mode="markers",
-            marker={"size": 9, "color": CHART_ACCENT, "opacity": 0.8},
+            marker={"size": 9, "color": chart_color("CHART_ACCENT"), "opacity": 0.8},
             customdata=coords[["Formula"]].astype(str).values,
             hovertemplate="<b>%{customdata[0]}</b><br>PC1 %{x:.2f} · PC2 %{y:.2f}<extra></extra>",
         ))
@@ -2934,12 +2724,12 @@ def plot_pca_scatter(coords: pd.DataFrame, color_by: str = "Bubble") -> go.Figur
                               f"<extra>{hover_extra}</extra>",
             ))
         fig.update_layout(legend={
-            "title": {"text": color_by, "font": {"color": CHART_MUTED}},
+            "title": {"text": color_by, "font": {"color": chart_color("CHART_MUTED")}},
             "orientation": "h", "yanchor": "bottom", "y": 1.02, "x": 0,
         })
 
-    fig.update_xaxes(title_text="PC1", title_font={"color": CHART_MUTED})
-    fig.update_yaxes(title_text="PC2", title_font={"color": CHART_MUTED})
+    fig.update_xaxes(title_text="PC1", title_font={"color": chart_color("CHART_MUTED")})
+    fig.update_yaxes(title_text="PC2", title_font={"color": chart_color("CHART_MUTED")})
     fig = _apply_chart_theme(fig, height=520)
     fig.update_layout(margin={"t": 56})   # headroom so the legend never overlaps
     return fig
@@ -2950,18 +2740,23 @@ def plot_pca_scatter(coords: pd.DataFrame, color_by: str = "Bubble") -> go.Figur
 # =============================================================================
 # These helpers convert DataFrames to downloadable files.
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
 def dataframe_to_csv_bytes(df: pd.DataFrame) -> bytes:
     """Convert a DataFrame to UTF-8 CSV bytes."""
 
     return df.to_csv(index=False).encode("utf-8")
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=32)
 def dataframe_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Data") -> bytes:
     """Convert a DataFrame to an Excel file in memory."""
 
     buffer = io.BytesIO()
     with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         df.to_excel(writer, sheet_name=sheet_name[:31], index=False)
+        # Imported text is data, including text beginning with '='. Never emit formulas.
+        for row in writer.sheets[sheet_name[:31]].iter_rows():
+            for cell in row:
+                if cell.data_type == "f":
+                    cell.data_type = "s"
     return buffer.getvalue()

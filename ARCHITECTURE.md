@@ -1,111 +1,54 @@
-# General Chemistry II Catalyst Insight Studio — Architecture
+# Architecture
 
-## Overview
+| Module | Responsibility |
+|---|---|
+| app.py | Entry point and reusable preparation/investigation views |
+| workspace_ui.py | Navigation, shared scope, Designer, notebook, reports |
+| pipeline.py | Parsing, cleaning, validation, descriptors, charts, exports |
+| modeling.py | Composition grouping, fitted preprocessing, evaluation, support |
+| projects.py | JSON schema, provenance, anonymous snapshots, scoped storage |
+| access.py | OIDC identity and verified-email instructor authorization |
+| submissions.py | Student result schema, validation, CSV handoff, conservative duplicate detection |
+| design.py | Native-theme styling, responsive layout, focus/motion support |
 
-Catalyst Insight Studio is a Streamlit web application that transforms student chemistry lab data into clean compound records, visual trend analysis, and machine-learning-based hypotheses. The app separates UI concerns (Streamlit widgets and layout) from data processing, ensuring portability and testability.
+Only the active workspace executes. Inactive pages do not train models, construct reports, or run PCA.
 
-## File Organization
+## Data flow
 
-**`app.py`** (918 lines) — Streamlit user interface  
-- Page layout, CSS theming, widget callbacks
-- Imports ~50 functions from `pipeline.py`
-- No data processing logic lives here
+Spreadsheet â†’ normalize long records â†’ apply reviewed corrections â†’ clean labels â†’
+calculate descriptors â†’ append project observations â†’ exclude invalid elements â†’
+shared scope â†’ validation, charts, modeling, scoped exports.
 
-**`pipeline.py`** (1551 lines) — All data, ML, and plotting logic  
-- No Streamlit UI code inside function bodies
-- Uses `@st.cache_data` decorators to speed up expensive operations
-- Organized into 11 sections (reference tables, data loading, cleaning, validation, descriptors, ML, visualization, export)
+Snapshots retain normalized source data and corrections separately. Source-row/slot identifiers
+link corrections to records. Opening another dataset clears staged entries and candidate previews.
 
-## Data Flow
+## Models
 
-```
-User uploads CSV/Excel
-       ↓
-read_table_from_bytes()
-       ↓
-normalize_to_long_format() [wide → long]
-       ↓
-clean_and_encode_data() [symbols, labels, formula]
-       ↓
-add_chemical_descriptors() [atomic mass, Z, formula weight]
-       ↓
-validate_compound_rows() [error checking]
-detect_numeric_outliers() [statistical flags]
-       ↓
-[Explore: plots, summaries, correlations]
-[Hypothesize: train ML model, predict bubble=yes]
-       ↓
-Export: CSV or Excel download
-```
+Bubble: yes=1/no=0. Purity: pure=1/impure=0. Unknown labels and invalid stoichiometry are excluded.
+Grouping normalizes ratios and sorts mixed-site elements so repeated/scaled compositions cannot
+cross the default holdout. Each sklearn Pipeline learns its own imputation; Logistic Regression
+also scales inside its pipeline. Holdout metrics describe the held-out estimator. Predictions
+use a separate refit on all eligible scoped records. Semester CV uses training semesters only.
+Folds without both outcomes are omitted with an explicit count.
 
-## Page Layout (`app.py`)
+## Persistence and access
 
-1. **Sidebar:** File upload widgets, outlier sensitivity slider, phase/ML toggles
-2. **Hero section:** Title and workflow steps  
-3. **Status strip:** Data source, row counts, validation summary
-4. **Check Data tab:** Validation issues, outliers, cleaned compound table
-5. **Explore Results tab:** Distribution charts, element trends, correlation heatmap
-6. **ML Lab tab:** Model accuracy, feature importance, single-compound predictions
-7. **Add Compound tab:** Form to manually enter and validate one compound
-8. **Export tab:** Download cleaned data, reports, outlier flags
+JSON only; no imported model pickle. Snapshots use SHA-256 filenames and atomic latest pointers.
+IDs/revisions are validated before path resolution. Storage namespaces hash authenticated
+issuer/subject, or use a shared namespace only in explicit local mode on a trusted workstation.
 
-Session state tracks manually added compounds in `st.session_state.manual_entries`.
+Bundles preserve anonymous normalized data, corrections, manual observations, hypotheses,
+original prediction context, filters/settings, and history. Imported bundles receive new IDs.
+Student exports use allowlisted columns; contact diagnostics are removed. Instructor authorization
+is checked against verified OIDC identity on each render, never a user-controlled role flag.
 
-## Core Modules in `pipeline.py`
+The file store is not a collaboration database. Concurrent browser edits can create independent
+revisions; the last save becomes the default, while older revisions remain recoverable.
+Configure persistent storage, backups, and retention for production.
 
-| Section | Purpose |
-|---------|---------|
-| **App Config** | Constants: APP_TITLE, COMPOUND_SLOTS, PHASE_MAP, BUBBLE_MAP, FRONT_COLUMNS |
-| **Utilities** | Text cleaning, label normalization, numeric parsing (safe_float, clean_symbol) |
-| **Reference Tables** | Load AtomicMass.csv and optional PaulingEN.csv; build element lookup maps |
-| **Data Loading** | Read CSV/Excel files; find default database or generate demo dataset |
-| **Column Mapping** | `infer_slot_column()` fuzzy-matches student survey columns (1A, 1AN, 2B, etc.) to standard names |
-| **Cleaning & Encoding** | Standardize element symbols, reconstruct chemical formulas, encode phase/bubble labels numerically |
-| **Validation** | Check for missing fields, invalid elements, incorrect labels, non-numeric ratios |
-| **Descriptors** | Compute weighted-average atomic numbers/masses per site, formula mass, cation/oxygen ratios, mixed-site flags |
-| **Summary & Plotting** | Aggregate by element, create bar/distribution/heatmap charts, compute correlations |
-| **ML Helpers** | Select features, build one-hot-encoded matrix, train Random Forest and Logistic Regression |
-| **Export** | Convert DataFrames to CSV or Excel bytes for download |
-
-## Key Data Structures
-
-**Wide → Long** (normalize_to_long_format)
-- Input: One row per student group, 4 potential compounds per group (columns 1A, 1AN, 1B, …, 4Bub)
-- Output: One row per compound, with metadata and formula fields
-
-**Formula Fields** (after cleaning)
-- A, AN, AP, APN (A-site element and ratio; optional A′)
-- B, BN, BP, BPN, BDP, BDPN (B-site element, ratio; up to three B variants)
-- O, ON (oxygen element and ratio, always "O")
-- P, Bub (phase and bubble response, encoded as PhaseN/BubN)
-
-**Descriptors** (computed per compound)
-- A_avg_Z, B_avg_Z (weighted atomic numbers by site)
-- FormulaMass (sum of element masses × stoichiometry)
-- O_to_cation_ratio, B_to_A_ratio (structural ratios)
-- Mixed_A_site, Mixed_B_site (binary flags)
-
-## ML Training (`train_ml_model`)
-
-Predicts bubble=yes probability using two models:
-- **Random Forest** (150 trees, max_depth=7) — final predictor, provides feature importance
-- **Logistic Regression** — sanity check for overfitting; compared side-by-side
-
-Both share the same 75/25 train/test split. Features include ratios, atomic properties, and one-hot-encoded element symbols.
-
-## Caching Strategy
-
-Heavy operations are cached with `@st.cache_data`:
-- File reading and table loading
-- Formula normalization
-- Data cleaning and descriptor computation
-- ML model training
-
-This keeps the UI responsive when students click between tabs.
-
-## Future Extensions
-
-- Add new descriptors in `add_chemical_descriptors()` (ionic radius, tolerance factor, electronegativity difference)
-- Add new validation rules in `validate_compound_rows()`
-- Adjust ML features in `feature_columns()` or change models in `train_ml_model()`
-- Update survey column aliases in `infer_slot_column()` if Google Form questions change
+Version 2.1 adds optional ExperimentID, LabGroup, ExperimentDate, Trial, and ObservationNotes to
+schema-1 records without removing older fields. Existing bundles still open. Contact/group roster
+fields remain excluded; LabGroup is an explicitly entered non-identifying group code. Submission
+CSV exports contain only recorded manual entries, not imported datasets or candidate predictions.
+Only equal IDs with unchanged content are deduplicated. Conflicting versions stop submission intake;
+legacy rows without IDs are retained. Student submissions require a human-controlled LMS/file handoff.

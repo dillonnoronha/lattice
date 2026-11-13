@@ -1,30 +1,24 @@
-# Student Guide
+# Student guide
 
-## Best order to use the app
+**Submitting class results:** follow [STUDENT_RESULTS_WORKFLOW.md](STUDENT_RESULTS_WORKFLOW.md).
+Start a blank results sheet, enter each actual experiment, and submit the **student submission CSV**
+through your LMS. Do not submit the sample data, a prediction, or an analysis export as lab results.
 
-1. Upload `Combined_Data.xlsx`.
-2. Open **Start Here** and confirm compounds loaded.
-3. Open **Check Data** and review any issues.
-4. Open **Explore Results** to compare A-site and B-site elements.
-5. Open **Relationship Map** to look at numeric relationships.
-6. Open **ML Lab** to test possible compounds as hypotheses.
-7. Use **Add Compound** to create a new cleaned entry.
-8. Use **Export** to save cleaned files.
+The investigation workflow below is for exploring data and planning experiments.
 
-## What is bubble response?
+1. Open a spreadsheet or try the sample investigation in the sidebar.
+2. Review Prepare data and correct invalid elements before analyzing results.
+3. Set semester/instructor scope once; it applies across research views and analysis exports.
+4. Investigate outcomes, relationships, structure, or a searchable compound record.
+5. Enter a composition and rationale in Experiment Designer. Evaluate, review support and
+   similar experiments, then save the hypothesis. Insufficient model data does not block saving.
+6. Compare candidates in Lab notebook, record actual observations, and explicitly add observed
+   experiments to the dataset. Original predictions stay intact.
+7. Share findings through anonymous data, a printable report, or a complete portable project.
 
-Bubble response is the lab observation of whether bubbles were seen:
-- `yes`
-- `no`
-- `maybe`
+Unknown/maybe responses do not count as failures. Model scores are exploratory, not calibrated
+probabilities. The four-row sample supports exploration but intentionally cannot train a model.
 
-The ML Lab predicts whether the result may be `bubble = yes`.
-
-## What is the heatmap?
-
-The heatmap compares numeric features:
-- +1 means two things tend to go up together.
-- 0 means no clear linear relationship.
-- -1 means one goes up while the other goes down.
-
-Look at the `BubbleYes` row or column to see which numeric features may be related to bubbling.
+The local launcher autosaves to this computer. Hosted users can sign in for storage if configured;
+anonymous users should download a project bundle before closing. Reopen a bundle from the sidebar.
+Contact fields are omitted from bundles; free-text notes remain as written.
