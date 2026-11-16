@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from datetime import date
+import hashlib
+import json
 import math
 import re
 
@@ -131,6 +133,72 @@ def render_submission_download(entries: pd.DataFrame, atomic: pd.DataFrame) -> N
                "Use a new entry for a real repeat trial. Do not enter student names or emails in notes or group codes.")
 
 
+def render_intake_review(combined: pd.DataFrame, batch_key: str = "") -> pd.DataFrame:
+    """Keep explicit row exclusions for this exact batch across Streamlit reruns."""
+    import streamlit as st
+    from pipeline import reconstruct_formula
+
+    signature = hashlib.sha256((batch_key + combined.to_json(orient="split")).encode()).hexdigest()
+    review = st.session_state.get("intake_review")
+    if not review or review["signature"] != signature:
+        review = {"signature": signature, "deleted": set(), "pending": None}
+        st.session_state.intake_review = review
+
+    def request_delete(index):
+        review["pending"] = index
+
+    def confirm_delete(index):
+        review["deleted"].add(index)
+        review["pending"] = None
+
+    def cancel_delete():
+        review["pending"] = None
+
+    def restore():
+        review["deleted"].clear()
+        review["pending"] = None
+
+    kept = combined.drop(index=list(review["deleted"]))
+    st.markdown("#### Review uploaded observations")
+    st.caption("Delete a row to exclude it from the combined class CSV and new class project. "
+               "Original files and the current project stay unchanged. Changing the uploaded batch "
+               "or included project data resets this review.")
+    if review["deleted"]:
+        st.info(f"{len(review['deleted'])} observation(s) deleted from this batch · {len(kept)} remaining")
+        st.button("Restore deleted rows", key="restore_intake_rows", on_click=restore)
+    for index, row in kept.iterrows():
+        summary, action = st.columns([5, 1])
+        formula = reconstruct_formula(row)
+        summary.write(f"Row {index + 1} · {formula} · trial {row.get('Trial', '')} · "
+                      f"{row.get('P', '')} · bubbles: {row.get('Bub', '')}")
+        summary.caption(f"{row.get('LabGroup', '')} · {row.get('Instructor', '')} · "
+                        f"{row.get('Semester', '')} · {row['_IntakeFile']} · "
+                        f"source row {row['_IntakeRow']} · ID {row.get('ExperimentID', '')}")
+        action.button("Delete row", key=f"intake_delete_{signature}_{index}",
+                      on_click=request_delete, args=(index,))
+        if review["pending"] == index:
+            st.warning(f"Remove row {index + 1} ({formula}) from this combined batch?")
+            confirm, cancel = st.columns(2)
+            confirm.button("Confirm row deletion", key=f"intake_confirm_{signature}_{index}",
+                           on_click=confirm_delete, args=(index,))
+            cancel.button("Keep row", key=f"intake_cancel_{signature}_{index}", on_click=cancel_delete)
+    with st.expander("View full combined table"):
+        st.dataframe(kept.reindex(columns=SUBMISSION_COLUMNS), hide_index=True, width="stretch")
+    return kept
+
+
+def intake_validation_issues(reviewed: pd.DataFrame, atomic: pd.DataFrame) -> pd.DataFrame:
+    """Validate remaining uploaded rows, preserving file and source-row attribution."""
+    uploaded = reviewed.loc[reviewed["_IntakeValidate"]].reset_index(drop=True)
+    uploaded["SourceRow"] = range(1, len(uploaded) + 1)
+    _, issues = submission_table(uploaded, atomic)
+    if not issues.empty:
+        sources = uploaded.iloc[issues.Row.to_numpy(dtype=int) - 1]
+        issues.insert(0, "File", sources["_IntakeFile"].to_numpy())
+        issues["Row"] = sources["_IntakeRow"].to_numpy()
+    return issues
+
+
 def render_submission_intake(existing: pd.DataFrame, atomic: pd.DataFrame) -> None:
     """Anonymous submission intake; the separate full-contact combine tool stays gated."""
     import streamlit as st
@@ -140,6 +208,7 @@ def render_submission_intake(existing: pd.DataFrame, atomic: pd.DataFrame) -> No
     uploads = st.file_uploader("Student submission CSVs", type=["csv"], accept_multiple_files=True, key="student_intake")
     include = st.checkbox("Include the whole current project dataset", value=not existing.empty)
     if not uploads:
+        st.session_state.pop("intake_review", None)
         return
     frames, problems = [], []
     for upload in uploads:
@@ -148,29 +217,46 @@ def render_submission_intake(existing: pd.DataFrame, atomic: pd.DataFrame) -> No
             if not set(SUBMISSION_COLUMNS).issubset(source.columns):
                 raise ValueError("Use the student submission download, not an analysis export or the old survey file.")
             rows, _ = normalize_to_long_format(source[SUBMISSION_COLUMNS])
-            table, issues = submission_table(rows, atomic)
+            table, _ = submission_table(rows, atomic)
             if table.empty:
                 raise ValueError("No experiments found in this submission.")
-            if not issues.empty:
-                problems.extend({"File": upload.name, **issue} for issue in issues.to_dict("records"))
-                continue
+            table["_IntakeFile"] = upload.name
+            table["_IntakeRow"] = range(1, len(table) + 1)
+            table["_IntakeValidate"] = True
             frames.append(table)
         except (ValueError, KeyError) as exc:
             problems.append({"File": upload.name, "Issue": str(exc)})
     if problems:
+        st.session_state.pop("intake_review", None)
         st.error("No files have been applied. Resolve these submissions before combining the batch.")
         st.dataframe(pd.DataFrame(problems), hide_index=True)
         return
     if include and not existing.empty:
-        frames.insert(0, existing.reindex(columns=SUBMISSION_COLUMNS))
+        current = existing.reindex(columns=SUBMISSION_COLUMNS).copy()
+        current["_IntakeFile"] = "Current project"
+        current["_IntakeRow"] = range(1, len(current) + 1)
+        current["_IntakeValidate"] = False  # Legacy imports need not have submission metadata.
+        frames.insert(0, current)
     combined, removed = combine_long_tables(frames)
+    batch_key = json.dumps({"uploads": [(u.name, hashlib.sha256(u.getvalue()).hexdigest()) for u in uploads],
+                            "include_project": include})
+    reviewed = render_intake_review(combined, batch_key)
+    combined = reviewed.reindex(columns=SUBMISSION_COLUMNS).reset_index(drop=True)
     conflicts = conflicting_experiments(combined)
     st.write(f"{len(combined)} experiments · {removed} unchanged resubmitted rows removed")
-    if not conflicts.empty:
-        st.error("An experiment ID has different versions. Resolve which observation is correct before importing; neither version was silently discarded.")
-        st.dataframe(conflicts, hide_index=True, width="stretch")
+    if combined.empty:
+        st.info("No observations remain. Restore deleted rows or upload another batch to continue.")
         return
-    st.dataframe(combined, hide_index=True, width="stretch")
+    issues = intake_validation_issues(reviewed, atomic)
+    if not conflicts.empty:
+        st.error("An experiment ID has different versions. Delete the incorrect row above or correct the source files before importing.")
+        st.dataframe(conflicts, hide_index=True, width="stretch")
+    if not issues.empty:
+        st.error("Some uploaded observations have validation issues. Delete the incorrect rows above "
+                 "or correct the source files before downloading or importing this batch.")
+        st.dataframe(issues, hide_index=True, width="stretch")
+    if not conflicts.empty or not issues.empty:
+        return
     st.markdown("#### Submission coverage")
     st.dataframe(submission_summary(combined), hide_index=True, width="stretch")
     st.caption("Counts show received experiments by section and lab group. Compare with your roster to identify missing submissions.")
@@ -184,5 +270,8 @@ def render_submission_intake(existing: pd.DataFrame, atomic: pd.DataFrame) -> No
         project["source"] = "Student submission collection"
         project["dataset"] = pr.encode_frame(pr.anonymous_data(normalized))
         pr.append_event(project, "Student submissions combined", f"{len(uploads)} files; {len(combined)} experiments")
+        deleted = len(st.session_state.intake_review["deleted"])
+        if deleted:
+            pr.append_event(project, "Uploaded observations excluded", f"{deleted} rows deleted during submission review.")
         activate(project, normalized)
         st.rerun()

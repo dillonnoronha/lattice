@@ -55,7 +55,11 @@ dataset snapshot; use **Recorded observation to edit** to correct the submitted 
 5. Leave **Include the whole current project dataset** checked only when appending to your master.
 6. Review validation messages and conflicts. An unchanged experiment ID/content pair is counted once.
    Distinct experiment IDs survive even with identical chemistry/outcomes. Changed versions of the
-   same ID stop intake for review: retain the correct submission file, then upload the batch again.
+   same ID stop intake for review. Use **Delete row → Confirm row deletion** beside an incorrect
+   observation to exclude just that row. This also allows a bad row to be removed while keeping
+   valid rows from the same file. Remaining validation issues must be resolved before export/import.
+   **Restore deleted rows** undoes the batch's deletions. The original files and current project
+   stay unchanged; changing the uploaded batch or included project data resets the review.
 7. Download **combined class CSV** for the master record, or choose **Open combined class results
    as a new project** to inspect it immediately. Download a project bundle for backup as well.
 
