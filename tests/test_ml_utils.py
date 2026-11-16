@@ -39,6 +39,7 @@ from pipeline import (
 # FIXTURES: Test data
 # ============================================================================
 
+# Provide a small atomic reference table for the automated checks.
 @pytest.fixture
 def atomic_table():
     """Minimal atomic reference table for testing."""
@@ -50,12 +51,14 @@ def atomic_table():
     ])
 
 
+# Provide an empty optional electronegativity table for the automated checks.
 @pytest.fixture
 def en_table():
     """Empty electronegativity table (optional feature)."""
     return pd.DataFrame()
 
 
+# Create sample experiment records before cleaning.
 @pytest.fixture
 def sample_raw_data():
     """Sample raw data before cleaning."""
@@ -103,6 +106,7 @@ def sample_raw_data():
     ])
 
 
+# Create sample experiment records after cleaning.
 @pytest.fixture
 def sample_clean_data(atomic_table):
     """Sample cleaned data after preprocessing."""
@@ -146,65 +150,79 @@ def sample_clean_data(atomic_table):
 class TestUtilityFunctions:
     """Test basic utility functions for data cleaning."""
 
+    # Check that a missing value is recognized as blank.
     def test_is_blank_with_none(self):
         """is_blank returns True for None."""
         assert is_blank(None) is True
 
+    # Check that empty text is recognized as blank.
     def test_is_blank_with_empty_string(self):
         """is_blank returns True for empty string."""
         assert is_blank("") is True
 
+    # Check that spaces alone are recognized as blank.
     def test_is_blank_with_whitespace(self):
         """is_blank returns True for whitespace-only string."""
         assert is_blank("   ") is True
 
+    # Check that actual text and numbers are not mistaken for blanks.
     def test_is_blank_with_valid_value(self):
         """is_blank returns False for non-blank values."""
         assert is_blank("Ca") is False
         assert is_blank(1.0) is False
 
+    # Check that extra spaces are removed from text.
     def test_clean_text_basic(self):
         """clean_text trims whitespace."""
         assert clean_text("  Ca  ") == "Ca"
 
+    # Check that missing text becomes an empty field.
     def test_clean_text_blank_returns_empty(self):
         """clean_text returns empty string for blank input."""
         assert clean_text(None) == ""
         assert clean_text("") == ""
 
+    # Check that numeric text is read as a number.
     def test_safe_float_valid(self):
         """safe_float converts valid numeric strings."""
         assert safe_float("1.5") == 1.5
         assert safe_float("2") == 2.0
         assert safe_float("0.25") == 0.25
 
+    # Check that a blank numeric field stays unknown rather than becoming zero.
     def test_safe_float_blank_returns_nan(self):
         """safe_float returns NaN for blank values."""
         assert np.isnan(safe_float(None))
         assert np.isnan(safe_float(""))
 
+    # Check that nonnumeric text is treated as an unknown number.
     def test_safe_float_invalid_returns_nan(self):
         """safe_float returns NaN for non-numeric strings."""
         assert np.isnan(safe_float("not a number"))
 
+    # Check that a simple fraction can be read as a number.
     def test_safe_float_fraction(self):
         """safe_float accepts simple fractions."""
         assert safe_float("1/2") == 0.5
         assert safe_float("2/4") == 0.5
 
+    # Check that a ratio of one is omitted from the displayed formula.
     def test_format_ratio_one(self):
         """format_ratio returns empty string for 1.0."""
         assert format_ratio(1.0) == ""
 
+    # Check that whole-number ratios display without a decimal point.
     def test_format_ratio_integer(self):
         """format_ratio formats integers without decimal."""
         assert format_ratio(2.0) == "2"
         assert format_ratio(3) == "3"
 
+    # Check that fractional ratios retain their decimal values.
     def test_format_ratio_decimal(self):
         """format_ratio preserves decimal values."""
         assert format_ratio(0.5) == "0.5"
 
+    # Check that zero and blank ratios do not add a formula number.
     def test_format_ratio_zero_or_blank(self):
         """format_ratio returns empty for zero and blank."""
         assert format_ratio(0) == ""
@@ -218,6 +236,7 @@ class TestUtilityFunctions:
 class TestDataLoading:
     """Test data loading from CSV and Excel."""
 
+    # Check that a CSV upload becomes a usable data table.
     def test_read_table_from_bytes_csv(self):
         """read_table_from_bytes loads CSV data."""
         csv_data = "Name,Value\nCa,1\nMn,2\n"
@@ -228,11 +247,13 @@ class TestDataLoading:
         assert list(df.columns) == ["Name", "Value"]
         assert df.iloc[0]["Name"] == "Ca"
 
+    # Check that unsupported upload formats are rejected clearly.
     def test_read_table_from_bytes_unsupported_type(self):
         """read_table_from_bytes raises error for unsupported file type."""
         with pytest.raises(ValueError, match="Unsupported file type"):
             read_table_from_bytes(b"data", "test.txt")
 
+    # Check how the file reader handles an empty CSV.
     def test_read_table_from_bytes_empty_csv(self):
         """read_table_from_bytes handles empty CSV."""
         csv_data = "Name,Value\n"
@@ -250,50 +271,59 @@ class TestDataLoading:
 class TestNormalizationFunctions:
     """Test label normalization for phase and bubble response."""
 
+    # Check that different descriptions of a pure phase receive the same label.
     def test_normalize_phase_pure(self):
         """normalize_phase_label recognizes pure phase."""
         assert normalize_phase_label("pure") == "pure"
         assert normalize_phase_label("Pure") == "pure"
         assert normalize_phase_label("PURE PHASE") == "pure"
 
+    # Check that impure-phase descriptions receive the same label.
     def test_normalize_phase_impure(self):
         """normalize_phase_label recognizes impure/heterogeneous."""
         assert normalize_phase_label("impure") == "impure"
         assert normalize_phase_label("Heterogeneous") == "impure"
 
+    # Check that unmade compounds are labeled separately from measured phase outcomes.
     def test_normalize_phase_not_made(self):
         """normalize_phase_label recognizes not made."""
         assert normalize_phase_label("did not make") == "not made"
         assert normalize_phase_label("melted") == "not made"
         assert normalize_phase_label("failed") == "not made"
 
+    # Check that a blank phase is not replaced with an assumed result.
     def test_normalize_phase_blank(self):
         """normalize_phase_label returns empty for blank."""
         assert normalize_phase_label("") == ""
         assert normalize_phase_label(None) == ""
 
+    # Check that unrecognized phase wording is flagged for review.
     def test_normalize_phase_unknown(self):
         """normalize_phase_label returns other for unknown."""
         assert normalize_phase_label("unknown value") == "other/needs review"
 
+    # Check that positive bubbling descriptions receive the yes label.
     def test_normalize_bubble_yes(self):
         """normalize_bubble_label recognizes yes."""
         assert normalize_bubble_label("yes") == "yes"
         assert normalize_bubble_label("YES") == "yes"
         assert normalize_bubble_label("y") == "yes"
 
+    # Check that negative bubbling descriptions receive the no label.
     def test_normalize_bubble_no(self):
         """normalize_bubble_label recognizes no."""
         assert normalize_bubble_label("no") == "no"
         assert normalize_bubble_label("NO") == "no"
         assert normalize_bubble_label("n") == "no"
 
+    # Check that ambiguous bubbling stays separate from yes and no.
     def test_normalize_bubble_maybe(self):
         """normalize_bubble_label recognizes maybe."""
         assert normalize_bubble_label("maybe") == "maybe"
         assert normalize_bubble_label("MAYBE") == "maybe"
         assert normalize_bubble_label("possibly") == "maybe"
 
+    # Check that blank or uncertain bubbling input does not become a confirmed result.
     def test_normalize_bubble_blank(self):
         """normalize_bubble_label returns empty for blank."""
         assert normalize_bubble_label("") == ""
@@ -303,12 +333,14 @@ class TestNormalizationFunctions:
 class TestCleanAndEncodeData:
     """Test data cleaning and encoding pipeline."""
 
+    # Check that cleaning an empty table does not fail.
     def test_clean_and_encode_empty_dataframe(self, atomic_table):
         """clean_and_encode_data handles empty DataFrame."""
         empty_df = pd.DataFrame()
         result = clean_and_encode_data(empty_df, atomic_table)
         assert result.empty
 
+    # Check that outcome labels receive the numeric fields used in analysis.
     def test_clean_and_encode_creates_numeric_columns(self, sample_raw_data, atomic_table):
         """clean_and_encode_data creates PhaseN and BubN numeric columns."""
         result = clean_and_encode_data(sample_raw_data, atomic_table)
@@ -318,6 +350,7 @@ class TestCleanAndEncodeData:
         assert result.iloc[0]["PhaseN"] == 2  # pure -> 2
         assert result.iloc[0]["BubN"] == 1  # yes -> 1
 
+    # Check that confirmed bubbling results are encoded as one or zero.
     def test_clean_and_encode_creates_bubble_yes_binary(self, sample_raw_data, atomic_table):
         """clean_and_encode_data creates BubbleYes binary column."""
         result = clean_and_encode_data(sample_raw_data, atomic_table)
@@ -326,6 +359,7 @@ class TestCleanAndEncodeData:
         assert result.iloc[0]["BubbleYes"] == 1  # yes
         assert result.iloc[1]["BubbleYes"] == 0  # no
 
+    # Check that an oxygen ratio can supply a missing oxygen symbol.
     def test_clean_and_encode_infers_oxygen(self, atomic_table):
         """clean_and_encode_data infers O when O is blank but ON is filled."""
         df = pd.DataFrame([
@@ -343,6 +377,7 @@ class TestCleanAndEncodeData:
         result = clean_and_encode_data(df, atomic_table)
         assert result.iloc[0]["O"] == "O"
 
+    # Check that cleaning standardizes the original outcome wording.
     def test_clean_and_encode_normalizes_labels(self, atomic_table):
         """clean_and_encode_data normalizes raw phase and bubble labels."""
         df = pd.DataFrame([
@@ -369,12 +404,14 @@ class TestCleanAndEncodeData:
 class TestAddChemicalDescriptors:
     """Test addition of chemical descriptor features."""
 
+    # Check that calculating properties for an empty table does not fail.
     def test_add_descriptors_empty_dataframe(self, atomic_table, en_table):
         """add_chemical_descriptors handles empty DataFrame."""
         empty_df = pd.DataFrame()
         result = add_chemical_descriptors(empty_df, atomic_table, en_table)
         assert result.empty
 
+    # Check that the calculations include atomic-number properties.
     def test_add_descriptors_creates_z_columns(self, sample_clean_data, atomic_table, en_table):
         """add_chemical_descriptors creates atomic number columns."""
         result = add_chemical_descriptors(sample_clean_data, atomic_table, en_table)
@@ -384,6 +421,7 @@ class TestAddChemicalDescriptors:
         assert result.iloc[0]["A_Z"] == 20  # Ca
         assert result.iloc[0]["B_Z"] == 25  # Mn
 
+    # Check that the calculations include atomic-mass properties.
     def test_add_descriptors_creates_mass_columns(self, sample_clean_data, atomic_table, en_table):
         """add_chemical_descriptors creates atomic mass columns."""
         result = add_chemical_descriptors(sample_clean_data, atomic_table, en_table)
@@ -392,6 +430,7 @@ class TestAddChemicalDescriptors:
         assert "B_Mass" in result.columns
         assert result.iloc[0]["A_Mass"] == 40.078  # Ca
 
+    # Check the calculated total mass of a chemical formula.
     def test_add_descriptors_creates_formula_mass(self, sample_clean_data, atomic_table, en_table):
         """add_chemical_descriptors calculates formula mass."""
         result = add_chemical_descriptors(sample_clean_data, atomic_table, en_table)
@@ -401,6 +440,7 @@ class TestAddChemicalDescriptors:
         expected_mass = 40.078 + 27.469 + 47.997
         assert abs(result.iloc[0]["FormulaMass"] - expected_mass) < 0.01
 
+    # Check that composition-ratio properties are calculated.
     def test_add_descriptors_creates_ratio_columns(self, sample_clean_data, atomic_table, en_table):
         """add_chemical_descriptors creates structural ratio columns."""
         result = add_chemical_descriptors(sample_clean_data, atomic_table, en_table)
@@ -410,6 +450,7 @@ class TestAddChemicalDescriptors:
         assert "Mixed_A_site" in result.columns
         assert "Mixed_B_site" in result.columns
 
+    # Check the total element ratios at each formula site.
     def test_add_descriptors_site_totals(self, sample_clean_data, atomic_table, en_table):
         """add_chemical_descriptors calculates site-level totals."""
         result = add_chemical_descriptors(sample_clean_data, atomic_table, en_table)
@@ -423,6 +464,7 @@ class TestAddChemicalDescriptors:
 class TestBuildFeatureMatrix:
     """Test feature matrix building for ML."""
 
+    # Check that the older model-input helper builds a usable numeric table.
     def test_build_feature_matrix_basic(self, sample_clean_data):
         """build_feature_matrix creates numeric and one-hot features."""
         features = build_feature_matrix(sample_clean_data, use_phase=True)
@@ -431,6 +473,7 @@ class TestBuildFeatureMatrix:
         assert features.shape[1] > 0  # Some features
         assert isinstance(features, pd.DataFrame)
 
+    # Check that expected numeric properties appear in the model-input table.
     def test_build_feature_matrix_numeric_features(self, sample_clean_data):
         """build_feature_matrix includes numeric features."""
         features = build_feature_matrix(sample_clean_data, use_phase=True)
@@ -438,6 +481,7 @@ class TestBuildFeatureMatrix:
         # Should have numeric features like AN, BN, ON
         assert any("AN" in col for col in features.columns) or len(features.columns) > 0
 
+    # Check that model inputs can be arranged in the training model's column order.
     def test_build_feature_matrix_alignment(self, sample_clean_data):
         """build_feature_matrix aligns to expected columns."""
         features1 = build_feature_matrix(sample_clean_data, use_phase=True)
@@ -449,6 +493,7 @@ class TestBuildFeatureMatrix:
         assert list(features2.columns) == expected_cols
         assert features2.shape[1] == len(expected_cols)
 
+    # Check that measured phase is included only when requested.
     def test_build_feature_matrix_with_phase(self, sample_clean_data):
         """build_feature_matrix includes phase when use_phase=True."""
         features_with = build_feature_matrix(sample_clean_data, use_phase=True)
@@ -465,6 +510,7 @@ class TestBuildFeatureMatrix:
 class TestTrainMLModel:
     """Test ML model training."""
 
+    # Check that modeling explains when fewer than ten suitable observations are available.
     def test_train_model_insufficient_data(self):
         """train_ml_model returns error for < 10 labeled rows."""
         df = pd.DataFrame([
@@ -476,6 +522,7 @@ class TestTrainMLModel:
         assert result["ok"] is False
         assert "at least 10 labeled" in result["message"]
 
+    # Check that modeling requires examples of both possible outcomes.
     def test_train_model_single_class(self):
         """train_ml_model returns error for single class."""
         df = pd.DataFrame([
@@ -486,6 +533,7 @@ class TestTrainMLModel:
         assert result["ok"] is False
         assert "both bubble=yes" in result["message"]
 
+    # Check that sufficient data with both outcomes can train a model.
     def test_train_model_success_mixed_data(self, sample_clean_data):
         """train_ml_model trains successfully with mixed classes."""
         # Expand data to meet minimum threshold
@@ -503,6 +551,7 @@ class TestTrainMLModel:
         assert "rf_accuracy" in result
         assert "lr_accuracy" in result
 
+    # Check that successful modeling returns its evaluation measurements.
     def test_train_model_returns_metrics(self, sample_clean_data):
         """train_ml_model returns expected metrics."""
         df = pd.concat([sample_clean_data] * 8, ignore_index=True)
@@ -522,6 +571,7 @@ class TestTrainMLModel:
 class TestMakeSinglePredictionRow:
     """Test single-row prediction input construction."""
 
+    # Check that a proposed composition becomes one clean analysis record.
     def test_make_prediction_row_basic(self, atomic_table, en_table):
         """make_single_prediction_row creates a cleaned row."""
         result = make_single_prediction_row(
@@ -546,6 +596,7 @@ class TestMakeSinglePredictionRow:
         assert result.iloc[0]["B"] == "Mn"
         assert result.iloc[0]["O"] == "O"
 
+    # Check that a proposed composition receives its calculated chemical properties.
     def test_make_prediction_row_has_descriptors(self, atomic_table, en_table):
         """make_single_prediction_row includes chemical descriptors."""
         result = make_single_prediction_row(
@@ -570,6 +621,7 @@ class TestMakeSinglePredictionRow:
         assert "B_Z" in result.columns
         assert "FormulaMass" in result.columns
 
+    # Check that prediction-input labels are standardized consistently.
     def test_make_prediction_row_normalized_labels(self, atomic_table, en_table):
         """make_single_prediction_row normalizes input labels."""
         result = make_single_prediction_row(
@@ -600,16 +652,19 @@ class TestMakeSinglePredictionRow:
 class TestEdgeCases:
     """Test edge cases and error handling."""
 
+    # Check that an invalid fraction with a zero denominator does not crash parsing.
     def test_safe_float_with_zero_denominator(self):
         """safe_float handles zero denominator in fractions."""
         result = safe_float("1/0")
         assert np.isnan(result)
 
+    # Check how very small ratios are displayed in formulas.
     def test_format_ratio_very_small_number(self):
         """format_ratio handles very small numbers."""
         result = format_ratio(0.0001)
         assert isinstance(result, str)
 
+    # Check that cleaning works when optional spreadsheet fields are absent.
     def test_clean_and_encode_missing_optional_columns(self, atomic_table):
         """clean_and_encode_data handles missing optional columns."""
         df = pd.DataFrame([
@@ -623,6 +678,7 @@ class TestEdgeCases:
         assert "PhaseN" in result.columns
         assert "BubN" in result.columns
 
+    # Check that unavailable element references leave properties unknown without crashing.
     def test_add_descriptors_with_missing_elements(self, atomic_table, en_table):
         """add_chemical_descriptors handles unknown elements gracefully."""
         df = pd.DataFrame([
@@ -641,6 +697,7 @@ class TestEdgeCases:
         assert "A_Z" in result.columns
         assert len(result) == 1
 
+    # Check how the older model-input helper handles missing numeric values.
     def test_build_feature_matrix_with_nan_values(self, sample_clean_data):
         """build_feature_matrix handles NaN values."""
         df = sample_clean_data.copy()
@@ -651,6 +708,7 @@ class TestEdgeCases:
         # Should fill NaN with 0
         assert not features.isna().any().any()
 
+    # Check that older course wording still maps to the correct phase labels.
     def test_normalize_phase_with_old_wording(self):
         """normalize_phase_label handles old General Chemistry II wording."""
         result = normalize_phase_label("pure phase/homogenous mixture")

@@ -6,6 +6,7 @@ from pipeline import load_atomic_table_from_bytes
 from submissions import conflicting_experiments, intake_validation_issues
 
 
+# Create a sample uploaded observation for testing class-file review.
 def row(identifier, **changes):
     result = dict(ExperimentID=identifier, LabGroup="DEMO-01", Instructor="Demo section",
                   Semester="Demo Fall 2026", ExperimentDate="2026-11-15", Trial=1,
@@ -16,12 +17,14 @@ def row(identifier, **changes):
     return result
 
 
+# Show just the upload-review controls in a small test application.
 def review_app():
     import streamlit as st
     from submissions import render_intake_review
     st.session_state.reviewed = render_intake_review(st.session_state.rows, st.session_state.get("batch_key", ""))
 
 
+# Open the test review screen with the supplied example rows.
 def review(frame):
     at = AppTest.from_function(review_app)
     at.session_state["rows"] = frame
@@ -30,11 +33,14 @@ def review(frame):
     return at
 
 
+# Press a test button and check that the app rerenders without an error.
 def click(at, label):
     next(b for b in at.button if b.label == label).click().run()
     assert not at.exception
 
 
+# Check exact-row deletion, cancellation, restoration, and reset when the uploaded batch
+# changes.
 def test_remove_exact_row_cancel_restore_and_batch_change():
     # Conflicting versions share an ID; a delete must remove only the chosen version.
     original = pd.DataFrame([row("a" * 32), row("a" * 32, Bub="no", _IntakeRow=2),
@@ -69,6 +75,7 @@ def test_remove_exact_row_cancel_restore_and_batch_change():
     pd.testing.assert_frame_equal(at.session_state["reviewed"], changed)
 
 
+# Check that deleting a bad row preserves valid rows and their source information.
 def test_bad_row_can_be_removed_without_discarding_valid_file_rows():
     original = pd.DataFrame([row("a" * 32, AN=-1, _IntakeRow=7), row("b" * 32, _IntakeRow=8),
                              row("", LabGroup="", _IntakeValidate=False, _IntakeFile="Current project")])
@@ -85,6 +92,7 @@ def test_bad_row_can_be_removed_without_discarding_valid_file_rows():
     pd.testing.assert_frame_equal(at.session_state["rows"], original)
 
 
+# Check that deleting the last uploaded row still allows it to be restored.
 def test_remove_last_row_can_be_restored():
     original = pd.DataFrame([row("a" * 32)])
     at = review(original)

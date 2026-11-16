@@ -11,6 +11,7 @@ from pipeline import load_atomic_table_from_bytes
 from submissions import submission_table
 
 
+# Create a valid example observation for testing deletion and reset.
 def recorded(identifier, trial=1):
     return dict(ExperimentID=identifier, LabGroup="DEMO-01", Instructor="Demo section",
                 Semester="Demo Fall 2026", ExperimentDate="2026-11-15", Trial=trial,
@@ -18,6 +19,7 @@ def recorded(identifier, trial=1):
                 BDP="", BDPN=0, O="O", ON=4, P="pure", Bub="yes", ObservationNotes="Demo")
 
 
+# Open a temporary, isolated project with two observations for the deletion tests.
 @pytest.fixture
 def sheet(monkeypatch, tmp_path):
     monkeypatch.setenv("LATTICE_LOCAL_MODE", "1")
@@ -30,11 +32,13 @@ def sheet(monkeypatch, tmp_path):
     return at
 
 
+# Press a test button and check that the app rerenders without an error.
 def click(at, label):
     next(b for b in at.button if b.label == label).click().run()
     assert not at.exception
 
 
+# Check that deleting an edited observation updates saved data without removing another trial.
 def test_delete_during_edit_preserves_other_trial_and_saved_csv(sheet):
     at = sheet
     identity = at.session_state["project"]["id"]
@@ -66,6 +70,7 @@ def test_delete_during_edit_preserves_other_trial_and_saved_csv(sheet):
     assert not any(b.label == "Download student submission CSV" for b in at.get("download_button"))
 
 
+# Check that deleting a dataset observation keeps its notebook record available to add again.
 def test_delete_unlinks_notebook_snapshot_without_losing_notebook_observation(sheet):
     at = sheet
     candidate = dict(id="a" * 32, formula="La2NiO4", row=pr.encode_frame(pd.DataFrame([recorded("a" * 32)])),
@@ -80,6 +85,8 @@ def test_delete_unlinks_notebook_snapshot_without_losing_notebook_observation(sh
     assert saved["observation"] == {"phase": "pure", "bubble": "yes"}
 
 
+# Check that Start fresh clears added results while preserving imports, the notebook, and other
+# projects.
 def test_start_fresh_clears_added_observations_preserving_imports_and_notebook(sheet):
     at = sheet
     original_id = at.session_state["project"]["id"]

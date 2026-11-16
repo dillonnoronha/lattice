@@ -2,6 +2,7 @@
 import streamlit as st
 
 
+# Apply Lattice's colors, spacing, and screen-layout adjustments.
 def inject_styles() -> None:
     st.markdown("""<style>
     .stMainBlockContainer { max-width:1280px; padding-top:2.5rem; padding-bottom:4rem; }

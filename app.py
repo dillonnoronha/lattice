@@ -50,6 +50,7 @@ PLOTLY_CONFIG = {
     "modeBarButtonsToRemove": ["lasso2d", "select2d", "autoScale2d", "zoomIn2d", "zoomOut2d"],
 }
 
+# Display the numbers in a chemical formula as subscripts.
 def formula_html(formula: str) -> str:
     """Render a formula string like La2NiO4 with real subscripts."""
 
@@ -58,6 +59,7 @@ def formula_html(formula: str) -> str:
     return '<span class="formula">' + re.sub(r"(\d+(?:\.\d+)?)", r"<sub>\1</sub>", safe) + "</span>"
 
 
+# Check Instructor authorization before showing restricted information.
 def instructor_mode_on() -> bool:
     """True only for an authorized, verified instructor identity."""
 
@@ -65,12 +67,14 @@ def instructor_mode_on() -> bool:
     return is_instructor()
 
 
+# Choose which table columns the current user is allowed to see.
 def visible(df: pd.DataFrame) -> pd.DataFrame:
     """Contact/group columns stay hidden for students, shown in instructor mode."""
 
     return df if instructor_mode_on() else public_view(df)
 
 
+# Let the user review suggested corrections for unrecognized element symbols.
 def render_did_you_mean(fix_proposals: pd.DataFrame, all_symbols: list) -> None:
     """Pre-cleaning panel: a table of invalid elements, each with a fix dropdown."""
 
@@ -123,6 +127,7 @@ def render_did_you_mean(fix_proposals: pd.DataFrame, all_symbols: list) -> None:
                 st.rerun()
 
 
+# Show data-entry problems, unusual values, and the available corrections.
 def render_check_tab(described_df: pd.DataFrame, issues_df: pd.DataFrame,
                      outlier_df: pd.DataFrame, cleaning_log: pd.DataFrame,
                      fix_proposals: pd.DataFrame, corrections_log: pd.DataFrame,
@@ -193,6 +198,7 @@ def render_check_tab(described_df: pd.DataFrame, issues_df: pd.DataFrame,
         )
 
 
+# Show outcome counts and compare results across elements and mixed compositions.
 def render_explore_tab(described_df: pd.DataFrame) -> None:
     """Tab 2 — response counts, per-element summaries, and cation-mixing views."""
 
@@ -290,6 +296,7 @@ def render_explore_tab(described_df: pd.DataFrame) -> None:
         st.dataframe(filtered[descriptor_cols].round(4), width="stretch", height=300)
 
 
+# Show which measured or calculated values tend to change together.
 def render_heatmap_tab(described_df: pd.DataFrame) -> None:
     """Tab 3 — interactive correlation heatmap with matching links table + glossary."""
 
@@ -358,6 +365,7 @@ def render_heatmap_tab(described_df: pd.DataFrame) -> None:
         )
 
 
+# Display compounds on a two-dimensional similarity map, with optional grouping.
 def render_pca_tab(described_df: pd.DataFrame) -> None:
     """Tab 4 — PCA structure map with optional KMeans clusters."""
 
@@ -401,6 +409,7 @@ def render_pca_tab(described_df: pd.DataFrame) -> None:
         st.dataframe(loadings.round(2), width="stretch")
 
 
+# Let Students enter, validate, edit, delete, and download their recorded experiments.
 def render_add_compound_tab(atomic: pd.DataFrame, en_table: pd.DataFrame, radii: pd.DataFrame) -> None:
     """Tab 6 — build and stage a new compound by hand for this session."""
 
@@ -419,6 +428,7 @@ def render_add_compound_tab(atomic: pd.DataFrame, en_table: pd.DataFrame, radii:
     symbols = valid_element_symbols(atomic)
     optional_symbols = [""] + symbols
 
+    # Build an element dropdown, including a blank choice for unused sites.
     def element_select(label: str, key: str, default: str = "", optional: bool = True):
         options = optional_symbols
         index = options.index(default) if default in options else 0
@@ -558,6 +568,7 @@ def render_add_compound_tab(atomic: pd.DataFrame, en_table: pd.DataFrame, radii:
             if choices:
                 selected = st.selectbox("Recorded observation to edit", choices,
                     format_func=lambda i: f"{entries.loc[i, 'Formula']} · trial {entries.loc[i].get('Trial', '')} · {str(entries.loc[i, 'ExperimentID'])[:8]}")
+                # Copy the selected observation into the form while retaining its experiment ID.
                 def load_for_edit():
                     from datetime import date
                     row = entries.loc[selected]
@@ -595,6 +606,7 @@ def render_add_compound_tab(atomic: pd.DataFrame, en_table: pd.DataFrame, radii:
     render_submission_download(st.session_state.manual_entries, atomic)
 
 
+# Preview and add another semester's spreadsheet to the current dataset.
 def render_new_semester_tab(long_df: pd.DataFrame) -> None:
     """Tab 8 — merge a new semester's raw export into the current dataset."""
 
@@ -679,6 +691,7 @@ def render_new_semester_tab(long_df: pd.DataFrame) -> None:
     st.caption("Open this merged file as a new project to preserve the current investigation.")
 
 
+# Let authorized Instructors combine legacy Student files, including restricted fields.
 def render_combine_tab(long_df: pd.DataFrame, atomic: pd.DataFrame, en_table: pd.DataFrame,
                        radii: pd.DataFrame) -> None:
     """Instructor-only tab — merge many student downloads into one master file."""
@@ -777,6 +790,7 @@ def render_combine_tab(long_df: pd.DataFrame, atomic: pd.DataFrame, en_table: pd
                "This download does not publish or update a shared class database automatically.")
 
 
+# Start Lattice by handing control to the workspace screen manager.
 def main() -> None:
     from workspace_ui import run
     run()

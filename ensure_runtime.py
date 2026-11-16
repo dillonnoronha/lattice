@@ -11,6 +11,7 @@ except ModuleNotFoundError:
     from pip._vendor.packaging.requirements import Requirement
 
 
+# Install missing packages or versions that do not match the app's requirements.
 def main() -> None:
     requirements = Path(__file__).resolve().parent / "requirements.txt"
     missing = []

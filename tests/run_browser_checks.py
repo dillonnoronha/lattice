@@ -11,6 +11,7 @@ from urllib.request import urlopen
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# Run browser checks on a separate local server without saving real projects.
 def main():
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))

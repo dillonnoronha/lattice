@@ -20,14 +20,17 @@ DATA_COLUMNS = ["SourceRow", "Slot", "ExperimentID", "LabGroup", "ExperimentDate
                 "BP", "BPN", "BDP", "BDPN", "O", "ON", "P", "Bub"]
 
 
+# Create a consistent date and time stamp for saved research activity.
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+# Convert a data table into a format that can be saved inside a JSON project file.
 def encode_frame(df: pd.DataFrame) -> dict:
     return json.loads(df.to_json(orient="split", date_format="iso"))
 
 
+# Validate a saved table's structure and rebuild it as a working data table.
 def decode_frame(value: dict) -> pd.DataFrame:
     if not isinstance(value, dict) or not isinstance(value.get("columns"), list) or not isinstance(value.get("data"), list):
         raise ValueError("Invalid project table.")
@@ -41,19 +44,23 @@ def decode_frame(value: dict) -> pd.DataFrame:
     return pd.DataFrame(value["data"], columns=value["columns"])
 
 
+# Keep approved research fields and leave out contact columns when saving a project.
 def anonymous_data(df: pd.DataFrame) -> pd.DataFrame:
     return df[[c for c in DATA_COLUMNS if c in df]].copy()
 
 
+# Create a content identifier that can detect changes to a dataset.
 def fingerprint(df: pd.DataFrame) -> str:
     return hashlib.sha256(df.to_json(orient="split", date_format="iso").encode()).hexdigest()
 
 
+# Record content identifiers for the chemistry reference tables used in the analysis.
 def reference_versions() -> dict:
     return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((ROOT / "data").glob("*.csv"))
             if p.name in {"AtomicMass.csv", "PaulingEN.csv", "ShannonRadii.csv"}}
 
 
+# Record the dataset, references, filters, and settings behind an analysis.
 def analysis_manifest(df: pd.DataFrame, filters: dict, settings: dict) -> dict:
     return {"app_version": APP_VERSION, "dataset_sha256": fingerprint(anonymous_data(df)),
             "rows": len(df), "filters": filters, "settings": settings, "references": reference_versions(),
@@ -61,6 +68,7 @@ def analysis_manifest(df: pd.DataFrame, filters: dict, settings: dict) -> dict:
             "score_interpretation": "Uncalibrated exploratory model scores, not measured probabilities."}
 
 
+# Create an empty project with its own ID and space for data, settings, and history.
 def new_project(name: str = "Untitled investigation") -> dict:
     return {"schema_version": SCHEMA_VERSION, "id": uuid.uuid4().hex, "name": name,
             "created": now(), "source": "", "dataset": encode_frame(pd.DataFrame()),
@@ -68,6 +76,7 @@ def new_project(name: str = "Untitled investigation") -> dict:
             "candidates": [], "history": [], "filters": {}, "settings": {}}
 
 
+# Check that an imported or exported project has supported, well-formed contents.
 def validate_project(project: dict) -> dict:
     if not isinstance(project, dict) or project.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("Unsupported project format/version.")
@@ -132,6 +141,7 @@ def validate_project(project: dict) -> dict:
     return project
 
 
+# Prepare a validated, portable JSON project download.
 def bundle_bytes(project: dict) -> bytes:
     # Validate a copy so exports cannot mutate the live workspace.
     safe = validate_project(json.loads(json.dumps(project, allow_nan=False)))
@@ -141,10 +151,13 @@ def bundle_bytes(project: dict) -> bytes:
     return data
 
 
+# Read an uploaded project file and reject unsupported or malformed contents.
 def read_bundle(data: bytes) -> dict:
     if len(data) > MAX_BUNDLE_BYTES:
         raise ValueError("Project bundles must be smaller than 25 MB.")
     try:
+        # Reject nonstandard numeric constants in a project file instead of accepting invalid
+        # data.
         def reject_constant(value):
             raise ValueError("Non-finite JSON values are not supported.")
         return validate_project(json.loads(data, parse_constant=reject_constant))
@@ -154,6 +167,7 @@ def read_bundle(data: bytes) -> dict:
 
 class ProjectStore:
     """Every owner has an isolated namespace. IDs are never used as arbitrary paths."""
+    # Choose the user's project-storage folder while keeping older saved projects accessible.
     def __init__(self, owner: str, root: Path | None = None):
         if not owner:
             raise ValueError("An authenticated identity or explicit local mode is required.")
@@ -170,11 +184,13 @@ class ProjectStore:
                 absolute = "\\\\?\\UNC\\" + absolute[2:] if absolute.startswith("\\\\") else "\\\\?\\" + absolute
             self.root = Path(absolute)
 
+    # Check a project ID before using it to locate that project's folder.
     def _directory(self, project_id: str) -> Path:
         if not re.fullmatch(r"[a-f0-9]{32}", str(project_id)):
             raise ValueError("Invalid project identifier.")
         return self.root / project_id
 
+    # Save a project revision and update the latest-version pointer only when needed.
     def save(self, project: dict) -> str:
         data = bundle_bytes(project)
         revision = hashlib.sha256(data).hexdigest()
@@ -193,6 +209,7 @@ class ProjectStore:
             self._write_atomic(catalog, summary_bytes)
         return revision
 
+    # Finish writing a temporary file before replacing the destination, avoiding partial saves.
     @staticmethod
     def _write_atomic(target: Path, data: bytes) -> None:
         temporary = target.parent / f"{uuid.uuid4().hex}.tmp"
@@ -202,6 +219,7 @@ class ProjectStore:
         finally:
             temporary.unlink(missing_ok=True)
 
+    # Load the latest saved project or a specific earlier revision.
     def load(self, project_id: str, revision: str | None = None) -> dict:
         directory = self._directory(project_id)
         revision = revision or (directory / "latest").read_text(encoding="ascii")
@@ -209,6 +227,7 @@ class ProjectStore:
             raise ValueError("Invalid revision.")
         return read_bundle((directory / f"{revision}.json").read_bytes())
 
+    # List saved project names without loading every project's full dataset.
     def list_projects(self) -> list[dict]:
         result = []
         for pointer in self.root.glob("*/latest"):
@@ -227,15 +246,18 @@ class ProjectStore:
                 continue
         return result
 
+    # List a project's saved revisions with the most recently written first.
     def revisions(self, project_id: str) -> list[str]:
         return [p.stem for p in sorted(self._directory(project_id).glob("*.json"),
                                       key=lambda p: p.stat().st_mtime, reverse=True)]
 
 
+# Add a dated action and explanation to the project's activity history.
 def append_event(project: dict, action: str, detail: str) -> None:
     project["history"].append({"time": now(), "action": action, "detail": detail})
 
 
+# Save a proposed experiment with its rationale, predictions, and original analysis context.
 def add_candidate(project: dict, row: pd.DataFrame, rationale: str, prediction: dict,
                   manifest: dict) -> None:
     project["candidates"].append({"id": uuid.uuid4().hex, "created": now(),

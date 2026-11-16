@@ -130,11 +130,13 @@ _CHART_THEMES = {
 }
 
 
+# Choose chart colors for this user's current display theme.
 def set_chart_theme(mode: str) -> None:
     """Set chart colors for this execution without changing other users' charts."""
     _CHART_MODE.set("light" if mode == "light" else "dark")
 
 
+# Look up a chart color from the current theme.
 def chart_color(name: str) -> str:
     return _CHART_THEMES[_CHART_MODE.get()][name]
 
@@ -164,12 +166,14 @@ OXYGEN_RADIUS = 1.40
 # These helpers are intentionally simple. They clean text, parse numbers, and
 # create display-friendly values used throughout the app.
 
+# Simplify a heading so differently written spreadsheet columns can be matched.
 def normalize_key(value: object) -> str:
     """Normalize a column name or label for fuzzy matching."""
 
     return re.sub(r"[^a-z0-9]", "", str(value).strip().lower())
 
 
+# Recognize empty cells, missing values, and text containing only spaces.
 def is_blank(value: object) -> bool:
     """Return True for None, NaN, empty strings, or whitespace-only values."""
 
@@ -183,6 +187,7 @@ def is_blank(value: object) -> bool:
     return str(value).strip() == ""
 
 
+# Remove surrounding spaces and turn missing values into empty text.
 def clean_text(value: object) -> str:
     """Convert a value into a trimmed string, using empty string for blanks."""
 
@@ -191,12 +196,14 @@ def clean_text(value: object) -> str:
     return str(value).strip()
 
 
+# Standardize capitalization and spacing in outcome labels.
 def clean_label(value: object) -> str:
     """Clean labels like phase and bubble response into lowercase text."""
 
     return clean_text(value).lower()
 
 
+# Translate different descriptions of phase into the app's standard categories.
 def normalize_phase_label(value: object) -> str:
     """
     Convert raw phase wording into a small set of clean categories.
@@ -262,6 +269,7 @@ def normalize_phase_label(value: object) -> str:
     return "other/needs review"
 
 
+# Translate different bubbling descriptions into the app's standard outcome labels.
 def normalize_bubble_label(value: object) -> str:
     """
     Convert raw bubble responses into yes/no/maybe.
@@ -288,6 +296,7 @@ def normalize_bubble_label(value: object) -> str:
     return "other/needs review"
 
 
+# Turn stored outcome labels into readable text for tables and charts.
 def display_label(value: object) -> str:
     """Convert internal labels into clean labels for graphs and tables."""
 
@@ -307,6 +316,7 @@ def display_label(value: object) -> str:
     return replacements.get(label, clean_text(value).title())
 
 
+# Read a number or simple fraction, leaving invalid or missing values unknown.
 def safe_float(value: object) -> float:
     """
     Convert a spreadsheet value into a float.
@@ -337,6 +347,7 @@ def safe_float(value: object) -> float:
         return np.nan
 
 
+# Format an element's ratio for display in a chemical formula.
 def format_ratio(value: object) -> str:
     """
     Format a numeric ratio for a chemical formula.
@@ -357,6 +368,7 @@ def format_ratio(value: object) -> str:
     return f"{number:g}"
 
 
+# Put the most useful fields first when displaying a results table.
 def ordered_columns(df: pd.DataFrame, preferred: Sequence[str] = FRONT_COLUMNS) -> List[str]:
     """Put important columns first, then append the rest."""
 
@@ -365,6 +377,7 @@ def ordered_columns(df: pd.DataFrame, preferred: Sequence[str] = FRONT_COLUMNS) 
     return first + rest
 
 
+# Keep only approved data columns for Student views and public exports.
 def public_view(df: pd.DataFrame, extra_hidden: Sequence[str] = ()) -> pd.DataFrame:
     """
     Return a copy of df without personal/group-identifying columns.
@@ -396,6 +409,7 @@ def public_view(df: pd.DataFrame, extra_hidden: Sequence[str] = ()) -> pd.DataFr
 # AtomicMass.csv provides element symbols, atomic numbers, and atomic masses. The
 # app also supports an optional Pauling electronegativity table if one is added.
 
+# Load the reference table used to look up atomic numbers and masses.
 @st.cache_data(show_spinner=False, max_entries=32)
 def load_atomic_table_from_bytes(file_bytes: Optional[bytes], file_name: str = "") -> pd.DataFrame:
     """
@@ -463,6 +477,7 @@ def load_atomic_table_from_bytes(file_bytes: Optional[bytes], file_name: str = "
     return atomic
 
 
+# Load electronegativity reference values when a table is available.
 @st.cache_data(show_spinner=False, max_entries=32)
 def load_en_table_from_bytes(file_bytes: Optional[bytes], file_name: str = "") -> pd.DataFrame:
     """Load an optional electronegativity table. Returns empty DataFrame if missing."""
@@ -494,6 +509,7 @@ def load_en_table_from_bytes(file_bytes: Optional[bytes], file_name: str = "") -
     return pd.DataFrame(columns=["Symbol", "Electronegativity"])
 
 
+# Load ionic-radius reference values used in approximate structural calculations.
 @st.cache_data(show_spinner=False, max_entries=32)
 def load_radii_table_from_bytes(file_bytes: Optional[bytes] = None, file_name: str = "") -> pd.DataFrame:
     """
@@ -524,6 +540,7 @@ def load_radii_table_from_bytes(file_bytes: Optional[bytes] = None, file_name: s
     return radii[["Symbol", "A_site_radius", "B_site_radius"]].dropna(subset=["Symbol"]).drop_duplicates("Symbol")
 
 
+# Prepare lookups that connect element names and symbols to valid reference entries.
 def make_element_maps(atomic: pd.DataFrame) -> Tuple[Dict[str, str], set]:
     """
     Build helper maps for cleaning element symbols.
@@ -545,6 +562,7 @@ def make_element_maps(atomic: pd.DataFrame) -> Tuple[Dict[str, str], set]:
     return name_to_symbol, valid_symbols
 
 
+# Standardize an element entry using known names, symbols, and spelling rules.
 def clean_symbol(value: object, name_to_symbol: Dict[str, str]) -> str:
     """
     Clean an element entry.
@@ -575,6 +593,7 @@ def clean_symbol(value: object, name_to_symbol: Dict[str, str]) -> str:
     return text
 
 
+# Recognize entries that mean an optional element site was left unused.
 def is_placeholder_symbol(value: object) -> bool:
     """
     Return True when an element cell is really a "no element here" placeholder.
@@ -605,6 +624,7 @@ def is_placeholder_symbol(value: object) -> bool:
 # The app accepts CSV and Excel files. To improve load times, file reading is
 # cached based on the uploaded file's bytes and filename.
 
+# Read an uploaded CSV or Excel file into a table the app can process.
 @st.cache_data(show_spinner=False, max_entries=32)
 def read_table_from_bytes(file_bytes: bytes, file_name: str) -> pd.DataFrame:
     """Read an uploaded CSV or Excel file into a DataFrame."""
@@ -625,6 +645,7 @@ def read_table_from_bytes(file_bytes: bytes, file_name: str) -> pd.DataFrame:
     raise ValueError("Unsupported file type. Please upload a CSV, XLSX, XLSM, or XLS file.")
 
 
+# Look for an existing class spreadsheet in the app's expected file locations.
 def find_default_database() -> Optional[Path]:
     """
     Look for a class database saved near the app.
@@ -648,6 +669,7 @@ def find_default_database() -> Optional[Path]:
     return None
 
 
+# Read a class spreadsheet saved on the computer running the app.
 @st.cache_data(show_spinner=False, max_entries=32)
 def read_local_table(path_string: str) -> pd.DataFrame:
     """Read a local default CSV or Excel file."""
@@ -657,6 +679,7 @@ def read_local_table(path_string: str) -> pd.DataFrame:
     return read_table_from_bytes(data, path.name)
 
 
+# Create a small example dataset for trying the investigation screens.
 def make_demo_dataset() -> pd.DataFrame:
     """
     Create a tiny demo dataset.
@@ -703,6 +726,7 @@ def make_demo_dataset() -> pd.DataFrame:
 # 5. COLUMN MAPPING AND RESHAPING
 # =============================================================================
 
+# Find the first spreadsheet column matching one of the expected names.
 def find_column(columns: List[str], candidates: List[str]) -> Optional[str]:
     """Return the first candidate column name that exists in columns."""
 
@@ -714,6 +738,7 @@ def find_column(columns: List[str], candidates: List[str]) -> Optional[str]:
     return None
 
 
+# Find a field belonging to a particular experiment in an older survey spreadsheet.
 def infer_slot_column(columns: Iterable[str], slot: int, field: str) -> Optional[str]:
     """
     Locate a compound-slot column such as 1A, 1AN, 2Bub, or 3BDPN.
@@ -781,6 +806,7 @@ def infer_slot_column(columns: Iterable[str], slot: int, field: str) -> Optional
     return None
 
 
+# Convert supported spreadsheet layouts into one table row per compound.
 @st.cache_data(show_spinner=False, max_entries=32)
 def normalize_to_long_format(raw_df: pd.DataFrame) -> tuple:
     """
@@ -978,6 +1004,7 @@ def normalize_to_long_format(raw_df: pd.DataFrame) -> tuple:
 # The official project asks students to split formulas into separate fields.
 # These functions standardize those fields and rebuild a readable formula.
 
+# Choose the ratio to display for one element, preserving uncertainty when it is missing.
 def ratio_for_formula(row: pd.Series, symbol_col: str, ratio_col: str, required: bool = False) -> float:
     """
     Choose a formula ratio for a symbol.
@@ -999,6 +1026,7 @@ def ratio_for_formula(row: pd.Series, symbol_col: str, ratio_col: str, required:
     return ratio
 
 
+# Build a readable chemical formula from the separate element and ratio fields.
 def reconstruct_formula(row: pd.Series) -> str:
     """
     Rebuild a formula from the split fields.
@@ -1033,6 +1061,7 @@ def reconstruct_formula(row: pd.Series) -> str:
     return "".join(parts)
 
 
+# Separate an older survey's group-members field into individual names.
 def split_member_names(text: object) -> List[str]:
     """Split a 'Members' cell into individual names.
 
@@ -1052,6 +1081,7 @@ def split_member_names(text: object) -> List[str]:
 EMAIL_MATCH_THRESHOLD = 0.45
 
 
+# Estimate how closely a name matches the text before the @ sign in an email.
 def _name_email_score(local: str, name: str) -> float:
     """Similarity (0-1ish) between an email local part and one member name."""
 
@@ -1074,6 +1104,7 @@ def _name_email_score(local: str, name: str) -> float:
     return base
 
 
+# Find which listed group member most closely matches a survey email address.
 def email_member_match(email: object, members: object) -> Tuple[str, float]:
     """Return (best-matching member name, match score) for an email + roster.
 
@@ -1088,6 +1119,7 @@ def email_member_match(email: object, members: object) -> Tuple[str, float]:
     return max(scored, key=lambda pair: pair[1])
 
 
+# Select the closest matching group-member name for an older survey submission.
 def best_name_for_email(email: object, members: object, fallback: object = "") -> str:
     """Pick the member name that best matches the submitter's email.
 
@@ -1103,6 +1135,7 @@ def best_name_for_email(email: object, members: object, fallback: object = "") -
     return name
 
 
+# Standardize experiment fields and prepare outcome values for calculations.
 @st.cache_data(show_spinner=False, max_entries=32)
 def clean_and_encode_data(long_df: pd.DataFrame, atomic: pd.DataFrame) -> pd.DataFrame:
     """
@@ -1203,6 +1236,7 @@ def clean_and_encode_data(long_df: pd.DataFrame, atomic: pd.DataFrame) -> pd.Dat
 # Data quality is a major part of this project because students may accidentally
 # enter full names, missing ratios, invalid labels, or blank values.
 
+# Find invalid elements, ratios, and outcome labels before results are used.
 @st.cache_data(show_spinner=False, max_entries=32)
 def validate_compound_rows(clean_df: pd.DataFrame, atomic: pd.DataFrame) -> pd.DataFrame:
     """
@@ -1218,6 +1252,7 @@ def validate_compound_rows(clean_df: pd.DataFrame, atomic: pd.DataFrame) -> pd.D
     _name_to_symbol, valid_symbols = make_element_maps(atomic)
     issues: List[dict] = []
 
+    # Add a specific problem and suggested correction to the validation report.
     def add_issue(row: pd.Series, field: str, issue: str, suggestion: str) -> None:
         issues.append(
             {
@@ -1304,6 +1339,7 @@ def validate_compound_rows(clean_df: pd.DataFrame, atomic: pd.DataFrame) -> pd.D
     return pd.DataFrame(issues)
 
 
+# Exclude unknown-element records from analysis and report which rows were removed.
 @st.cache_data(show_spinner=False, max_entries=32)
 def remove_invalid_element_rows(df: pd.DataFrame, atomic: pd.DataFrame) -> tuple:
     """
@@ -1356,6 +1392,7 @@ def remove_invalid_element_rows(df: pd.DataFrame, atomic: pd.DataFrame) -> tuple
     return clean_df, pd.DataFrame(log, columns=log_columns)
 
 
+# Suggest likely intended element symbols for an unrecognized entry.
 def suggest_elements(value: object, atomic: pd.DataFrame, n: int = 4) -> List[str]:
     """
     Suggest the most likely valid element symbols for a bad entry ("did you mean?").
@@ -1391,6 +1428,7 @@ def suggest_elements(value: object, atomic: pd.DataFrame, n: int = 4) -> List[st
     return out[:n]
 
 
+# Get the alphabetized list of allowed element symbols for entry and correction menus.
 def valid_element_symbols(atomic: pd.DataFrame) -> List[str]:
     """Return the sorted list of valid element symbols (for fix dropdowns)."""
 
@@ -1398,6 +1436,7 @@ def valid_element_symbols(atomic: pd.DataFrame) -> List[str]:
     return sorted(valid_symbols)
 
 
+# Find invalid element cells and prepare possible replacements for review.
 def propose_element_fixes(long_df: pd.DataFrame, atomic: pd.DataFrame) -> pd.DataFrame:
     """
     Find element cells that are not valid symbols and attach suggestions.
@@ -1432,6 +1471,7 @@ def propose_element_fixes(long_df: pd.DataFrame, atomic: pd.DataFrame) -> pd.Dat
     return pd.DataFrame(rows, columns=cols)
 
 
+# Apply the user's chosen element corrections while retaining a correction log.
 def apply_element_fixes(long_df: pd.DataFrame, fixes: Dict[str, str]) -> tuple:
     """
     Replace element cells with user-chosen corrections before cleaning.
@@ -1467,6 +1507,7 @@ def apply_element_fixes(long_df: pd.DataFrame, fixes: Dict[str, str]) -> tuple:
     return df, pd.DataFrame(log, columns=cols)
 
 
+# Flag unusually high or low numeric values for review, without deleting them.
 @st.cache_data(show_spinner=False, max_entries=32)
 def detect_numeric_outliers(df: pd.DataFrame, z_threshold: float = 3.0) -> pd.DataFrame:
     """
@@ -1517,6 +1558,7 @@ def detect_numeric_outliers(df: pd.DataFrame, z_threshold: float = 3.0) -> pd.Da
 # Descriptors are numeric chemistry features created from the split formula.
 # They make the data usable for graphs and machine learning.
 
+# Look up a reference property for one element.
 def lookup_atomic_value(atomic_index: pd.DataFrame, symbol: object, column: str) -> float:
     """Look up an atomic property by element symbol."""
 
@@ -1526,6 +1568,8 @@ def lookup_atomic_value(atomic_index: pd.DataFrame, symbol: object, column: str)
     return float(atomic_index.loc[symbol, column])
 
 
+# Average a site's properties by composition, keeping the result unknown if needed data is
+# missing.
 def weighted_average(values: Sequence[float], weights: Sequence[float]) -> float:
     """A site property is unknown when an occupied constituent is unknown."""
 
@@ -1540,6 +1584,7 @@ def weighted_average(values: Sequence[float], weights: Sequence[float]) -> float
     return sum(v * w for v, w in pairs) / total_weight
 
 
+# Calculate composition-based properties used in comparisons, charts, and models.
 @st.cache_data(show_spinner=False, max_entries=32)
 def add_chemical_descriptors(clean_df: pd.DataFrame, atomic: pd.DataFrame, en_table: pd.DataFrame,
                              radii_table: Optional[pd.DataFrame] = None) -> pd.DataFrame:
@@ -1604,6 +1649,7 @@ def add_chemical_descriptors(clean_df: pd.DataFrame, atomic: pd.DataFrame, en_ta
     )
 
     # Site-weighted atomic numbers and masses.
+    # Calculate a site's average property from its elements and their formula ratios.
     def site_average(row: pd.Series, site_fields: Sequence[Tuple[str, str]], property_suffix: str) -> float:
         values = []
         weights = []
@@ -1624,6 +1670,7 @@ def add_chemical_descriptors(clean_df: pd.DataFrame, atomic: pd.DataFrame, en_ta
         df["EN_difference_B_minus_A"] = df["B_avg_EN"] - df["A_avg_EN"]
 
     # Formula mass estimate.
+    # Add the element masses in a formula only when all required contributions are known.
     def formula_mass(row: pd.Series) -> float:
         total = 0.0
         has_value = False
@@ -1687,6 +1734,7 @@ def add_chemical_descriptors(clean_df: pd.DataFrame, atomic: pd.DataFrame, en_ta
     # 0.0 = a single element on the site; 0.5 = a 50/50 mix; captures the fact
     # that A vs A' (or B vs B'/B'') can be present in DIFFERING amounts, which the
     # binary Mixed_*_site flags do not.
+    # Calculate the fraction of a site's composition supplied by its additional elements.
     def _dopant_fraction(row: pd.Series, main: Tuple[str, str], extras: Sequence[Tuple[str, str]]) -> float:
         main_ratio = ratio_for_formula(row, main[0], main[1], required=True)
         extra_ratio = sum(
@@ -1712,6 +1760,7 @@ def add_chemical_descriptors(clean_df: pd.DataFrame, atomic: pd.DataFrame, en_ta
     if not radii_table.empty:
         radii_index = radii_table.set_index("Symbol")
 
+        # Calculate a site's average ionic radius using the available reference assumptions.
         def _site_radius(row: pd.Series, fields: Sequence[Tuple[str, str]], col: str) -> float:
             values, weights = [], []
             for symbol_col, ratio_col in fields:
@@ -1745,6 +1794,7 @@ def add_chemical_descriptors(clean_df: pd.DataFrame, atomic: pd.DataFrame, en_ta
 # These functions create student-readable charts and summaries. Each chart is
 # paired with short explanation text in the UI.
 
+# Summarize bubbling and phase results for each element at the selected site.
 def summarize_by_element(df: pd.DataFrame, element_col: str, min_rows: int = 1) -> pd.DataFrame:
     """Summarize bubble and phase results by a selected element column."""
 
@@ -1775,6 +1825,7 @@ def summarize_by_element(df: pd.DataFrame, element_col: str, min_rows: int = 1) 
     return summary.sort_values(["bubble_yes_rate", "compounds"], ascending=[False, False])
 
 
+# Count how often each bubbling or phase outcome appears.
 def label_count_table(
     df: pd.DataFrame,
     column: str,
@@ -1815,6 +1866,7 @@ def label_count_table(
     return out
 
 
+# Give a chart the app's current colors, typography, and background.
 def _apply_chart_theme(fig: go.Figure, title: str = "", height: int = 420) -> go.Figure:
     """Apply the shared theme-aware look to a Plotly figure."""
 
@@ -1848,6 +1900,7 @@ def _apply_chart_theme(fig: go.Figure, title: str = "", height: int = 420) -> go
     return fig
 
 
+# Draw a horizontal bar chart, such as a comparison of model input importance.
 def plot_bar_chart(data: pd.DataFrame, x_col: str, y_col: str, title: str, ylabel: str) -> go.Figure:
     """
     Interactive horizontal bar chart (used for model feature importance).
@@ -1879,6 +1932,7 @@ def plot_bar_chart(data: pd.DataFrame, x_col: str, y_col: str, title: str, ylabe
     return _apply_chart_theme(fig, title=title, height=height)
 
 
+# Calculate how strongly pairs of numeric properties vary together.
 def numeric_correlation_table(df: pd.DataFrame) -> pd.DataFrame:
     """Create a correlation matrix from the numeric columns used in the app."""
 
@@ -1904,6 +1958,7 @@ def numeric_correlation_table(df: pd.DataFrame) -> pd.DataFrame:
     return numeric.corr(numeric_only=True, min_periods=3)
 
 
+# Replace an internal column name with a shorter, readable chart label.
 def friendly_label(name: str) -> str:
     """Turn an internal column name into a short human-readable heatmap label."""
 
@@ -1971,6 +2026,7 @@ FEATURE_GLOSSARY: Dict[str, str] = {
 }
 
 
+# Explain the meanings of the selected chemistry and analysis terms.
 def glossary_table(features: Sequence[str]) -> pd.DataFrame:
     """Return a Term/Meaning table for the given internal feature names."""
 
@@ -1983,6 +2039,7 @@ def glossary_table(features: Sequence[str]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# Compare outcomes for compounds with single-element and mixed-element sites.
 @st.cache_data(show_spinner=False, max_entries=32)
 def mixing_summary(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -2002,6 +2059,7 @@ def mixing_summary(df: pd.DataFrame) -> pd.DataFrame:
     a_mix = d["Mixed_A_site"].fillna(0).astype(int)
     b_mix = d["Mixed_B_site"].fillna(0).astype(int)
 
+    # Label a compound according to which sites contain a mixture of elements.
     def _bucket(a: int, b: int) -> str:
         if a and b:
             return "Mixed A & B sites"
@@ -2013,6 +2071,7 @@ def mixing_summary(df: pd.DataFrame) -> pd.DataFrame:
 
     d["MixCategory"] = [_bucket(a, b) for a, b in zip(a_mix, b_mix)]
 
+    # Convert known yes/no values into a percentage while ignoring missing outcomes.
     def _pct(sub_df: pd.DataFrame, column: str) -> float:
         """Mean of a 0-1 column as a percent, safe against missing/NaN."""
         if column not in sub_df.columns:
@@ -2039,6 +2098,7 @@ def mixing_summary(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# Draw a colored grid showing relationships between numeric properties.
 def plot_heatmap(corr: pd.DataFrame) -> go.Figure:
     """
     Interactive correlation heatmap.
@@ -2079,6 +2139,7 @@ def plot_heatmap(corr: pd.DataFrame) -> go.Figure:
     return _apply_chart_theme(fig, height=height)
 
 
+# List the numeric properties most strongly associated with the recorded bubbling outcome.
 def bubble_relationships(corr: pd.DataFrame, restrict_to: Optional[Sequence[str]] = None,
                          top_n: int = 10) -> pd.DataFrame:
     """
@@ -2118,11 +2179,13 @@ def bubble_relationships(corr: pd.DataFrame, restrict_to: Optional[Sequence[str]
 # 9b. PERIODIC TABLE VIEW, EXTRA CHARTS, NEIGHBORS, MERGE + REPORT HELPERS
 # =============================================================================
 
+# Assign each element a position in the periodic-table chart.
 def _build_periodic_positions() -> Dict[str, Tuple[int, int]]:
     """(row, column) grid position for every element, La/Ac series offset below."""
 
     positions: Dict[str, Tuple[int, int]] = {}
 
+    # Place one sequence of elements into a row of the periodic-table layout.
     def place(row: int, start_col: int, symbols: str) -> None:
         for offset, sym in enumerate(symbols.split()):
             positions[sym] = (row, start_col + offset)
@@ -2142,6 +2205,7 @@ def _build_periodic_positions() -> Dict[str, Tuple[int, int]]:
 PERIODIC_POSITIONS = _build_periodic_positions()
 
 
+# Calculate outcome counts and rates for each element appearing in the data.
 @st.cache_data(show_spinner=False, max_entries=32)
 def element_outcome_summary(df: pd.DataFrame, scope: str = "any") -> pd.DataFrame:
     """
@@ -2178,6 +2242,7 @@ def element_outcome_summary(df: pd.DataFrame, scope: str = "any") -> pd.DataFram
     return grouped.round(1)
 
 
+# Color the periodic table by an outcome rate and show supporting experiment counts.
 def plot_periodic_heat(summary: pd.DataFrame, value_col: str = "BubbleYesPct") -> go.Figure:
     """
     Periodic table colored by an outcome rate (default: bubble-yes %).
@@ -2229,6 +2294,7 @@ def plot_periodic_heat(summary: pd.DataFrame, value_col: str = "BubbleYesPct") -
     return _apply_chart_theme(fig, height=430)
 
 
+# Show how the model's predictions compare with actual outcomes in the test data.
 def plot_confusion(confusion: Dict[str, int]) -> go.Figure:
     """2×2 confusion-matrix heatmap for the bubble model's held-out test set."""
 
@@ -2246,6 +2312,7 @@ def plot_confusion(confusion: Dict[str, int]) -> go.Figure:
     return _apply_chart_theme(fig, height=280)
 
 
+# Plot how a model score changes as one input is varied.
 def plot_what_if(sweep: pd.DataFrame, x_label: str, current_value: float) -> go.Figure:
     """
     Line chart of predicted probabilities as ONE input is swept.
@@ -2277,6 +2344,7 @@ def plot_what_if(sweep: pd.DataFrame, x_label: str, current_value: float) -> go.
     return fig
 
 
+# Find past experiments with the most similar available numeric composition properties.
 def nearest_neighbors(df: pd.DataFrame, pred_row: pd.DataFrame, k: int = 5) -> pd.DataFrame:
     """
     The k most compositionally similar past experiments to a proposed compound.
@@ -2320,6 +2388,7 @@ def nearest_neighbors(df: pd.DataFrame, pred_row: pd.DataFrame, k: int = 5) -> p
     return out.reset_index(drop=True)
 
 
+# Identify incoming rows whose experiment ID and recorded contents already exist.
 def find_merge_duplicates(existing: pd.DataFrame, new: pd.DataFrame) -> pd.DataFrame:
     """Only unchanged records with the same explicit experiment ID are duplicates."""
     from submissions import duplicate_keys
@@ -2330,6 +2399,7 @@ def find_merge_duplicates(existing: pd.DataFrame, new: pd.DataFrame) -> pd.DataF
     return new[[key is not None and key in known for key in keys]].copy()
 
 
+# Combine datasets while removing unchanged resubmissions and preserving independent trials.
 def combine_long_tables(frames: Sequence[pd.DataFrame],
                         drop_exact_duplicates: bool = True) -> Tuple[pd.DataFrame, int]:
     """Combine files without confusing independent trials with duplicate uploads.
@@ -2353,6 +2423,7 @@ def combine_long_tables(frames: Sequence[pd.DataFrame],
     return merged[keep].reset_index(drop=True), len(keep) - sum(keep)
 
 
+# Turn a small portion of a data table into a readable report section.
 def _report_table(df: Optional[pd.DataFrame], max_rows: int = 12) -> str:
     """Render a DataFrame as report HTML (or a placeholder note)."""
 
@@ -2361,6 +2432,7 @@ def _report_table(df: Optional[pd.DataFrame], max_rows: int = 12) -> str:
     return df.head(max_rows).to_html(index=False, border=0, classes="tbl", justify="left")
 
 
+# Assemble a printable web report from the analysis summaries and charts.
 def build_html_report(stats: Dict[str, object],
                       bubble_counts: Optional[pd.DataFrame],
                       phase_counts: Optional[pd.DataFrame],
@@ -2375,6 +2447,7 @@ def build_html_report(stats: Dict[str, object],
     aggregates only). Open in a browser and print to PDF if needed.
     """
 
+    # Format a known outcome rate as a percentage for the report.
     def _pct(x: object) -> str:
         try:
             return f"{float(x):.0%}"
@@ -2467,6 +2540,7 @@ descriptors: {stats.get('mass_note', 'per current sidebar setting')}.</div>
 # The ML section is intentionally simple and transparent. It is for generating
 # hypotheses, not proving final scientific conclusions.
 
+# Choose which calculated properties and optional phase information a model may use.
 def feature_columns(use_phase: bool = True, use_mass: bool = True) -> Tuple[List[str], List[str]]:
     """
     Return numeric and categorical features used by the model.
@@ -2506,6 +2580,7 @@ def feature_columns(use_phase: bool = True, use_mass: bool = True) -> Tuple[List
     return numeric, categorical
 
 
+# Arrange numeric properties into the columns expected by a model.
 def build_feature_matrix(
     df: pd.DataFrame,
     use_phase: bool = True,
@@ -2546,6 +2621,7 @@ def build_feature_matrix(
     return features
 
 
+# Run and cache the bubbling model's training and evaluation results.
 @st.cache_data(show_spinner=False, max_entries=8)
 def train_ml_model(df: pd.DataFrame, use_phase: bool = False, use_mass: bool = False,
                    random_state: int = 42, evaluation: str = "composition",
@@ -2554,6 +2630,7 @@ def train_ml_model(df: pd.DataFrame, use_phase: bool = False, use_mass: bool = F
     return evaluate(df, "bubble", use_phase, use_mass, random_state, evaluation, holdout_semester)
 
 
+# Run and cache the phase-purity model's training and evaluation results.
 @st.cache_data(show_spinner=False, max_entries=8)
 def train_purity_model(df: pd.DataFrame, use_mass: bool = False, random_state: int = 42,
                        evaluation: str = "composition", holdout_semester: str = "") -> dict:
@@ -2561,6 +2638,7 @@ def train_purity_model(df: pd.DataFrame, use_mass: bool = False, random_state: i
     return evaluate(df, "purity", False, use_mass, random_state, evaluation, holdout_semester)
 
 
+# Convert a proposed composition into the same cleaned, calculated fields used for analysis.
 def make_single_prediction_row(
     atomic: pd.DataFrame,
     en_table: pd.DataFrame,
@@ -2629,6 +2707,7 @@ PCA_FEATURE_COLUMNS = [
 ]
 
 
+# Reduce varying numeric properties to two plotting coordinates for comparing compounds.
 @st.cache_data(show_spinner=False, max_entries=32)
 def compute_pca(df: pd.DataFrame, n_clusters: int = 0, random_state: int = 42) -> dict:
     """
@@ -2687,6 +2766,7 @@ def compute_pca(df: pd.DataFrame, n_clusters: int = 0, random_state: int = 42) -
     }
 
 
+# Draw the compound comparison map with colors for outcomes or calculated groups.
 def plot_pca_scatter(coords: pd.DataFrame, color_by: str = "Bubble") -> go.Figure:
     """
     Interactive 2-D PCA scatter, points colored by the chosen column.
@@ -2740,6 +2820,7 @@ def plot_pca_scatter(coords: pd.DataFrame, color_by: str = "Bubble") -> go.Figur
 # =============================================================================
 # These helpers convert DataFrames to downloadable files.
 
+# Prepare a table as a downloadable CSV file.
 @st.cache_data(show_spinner=False, max_entries=32)
 def dataframe_to_csv_bytes(df: pd.DataFrame) -> bytes:
     """Convert a DataFrame to UTF-8 CSV bytes."""
@@ -2747,6 +2828,7 @@ def dataframe_to_csv_bytes(df: pd.DataFrame) -> bytes:
     return df.to_csv(index=False).encode("utf-8")
 
 
+# Prepare an Excel download while keeping formula-like text as text.
 @st.cache_data(show_spinner=False, max_entries=32)
 def dataframe_to_excel_bytes(df: pd.DataFrame, sheet_name: str = "Data") -> bytes:
     """Convert a DataFrame to an Excel file in memory."""

@@ -9,7 +9,8 @@ with sync_playwright() as p:
     browser = p.chromium.launch(channel=os.environ.get("PLAYWRIGHT_CHANNEL", "chrome"), headless=True)
     page = browser.new_page(viewport={"width": 1440, "height": 1050}, reduced_motion="reduce")
     page.goto(os.environ.get("LATTICE_TEST_URL", "http://127.0.0.1:8501"), wait_until="networkidle")
-    expect(page).to_have_title("Lattice")
+    # A fresh desktop environment may need extra time to load the science packages.
+    expect(page).to_have_title("Lattice", timeout=30000)
     expect(page.get_by_role("heading", name="Lattice", exact=True)).to_be_visible()
     page.get_by_role("button", name="Try the sample investigation").click()
     expect(page.get_by_text("Your investigation at a glance")).to_be_visible(timeout=30000)

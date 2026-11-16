@@ -22,6 +22,7 @@ from submissions import submission_table, conflicting_experiments, duplicate_key
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# Check that the new local-storage setting takes priority over the older app setting.
 def test_lattice_local_mode_accepts_legacy_setting_but_new_setting_wins(monkeypatch):
     from access import local_mode
     monkeypatch.delenv("LATTICE_LOCAL_MODE", raising=False)
@@ -33,6 +34,7 @@ def test_lattice_local_mode_accepts_legacy_setting_but_new_setting_wins(monkeypa
     assert local_mode()
 
 
+# Check that projects saved under the old app name remain accessible.
 def test_lattice_keeps_existing_owner_projects_accessible(tmp_path, monkeypatch):
     monkeypatch.setattr(pr, "ROOT", tmp_path)
     legacy = pr.ProjectStore("existing-owner", tmp_path / ".catalyst")
@@ -49,6 +51,7 @@ def test_lattice_keeps_existing_owner_projects_accessible(tmp_path, monkeypatch)
     assert ".lattice" in fresh.root.parts
 
 
+# Check that unchanged saves and project listings avoid unnecessary file work.
 def test_unchanged_save_does_not_write_and_catalog_does_not_load_datasets(tmp_path, monkeypatch):
     store = pr.ProjectStore("test", tmp_path)
     project = pr.new_project("Before")
@@ -61,6 +64,7 @@ def test_unchanged_save_does_not_write_and_catalog_does_not_load_datasets(tmp_pa
     assert store.list_projects() == [{"id": project["id"], "name": "Before"}]
 
 
+# Check that the saved-project list can recover from missing or outdated summaries.
 def test_old_and_stale_catalogs_recover(tmp_path):
     store = pr.ProjectStore("test", tmp_path)
     project = pr.new_project("Before")
@@ -76,11 +80,13 @@ def test_old_and_stale_catalogs_recover(tmp_path):
     assert len(store.revisions(project["id"])) == 2
 
 
+# Check that a failed save preserves the earlier revision and cleans up temporary files.
 def test_atomic_failure_leaves_previous_revision_and_no_temporary_files(tmp_path, monkeypatch):
     store = pr.ProjectStore("test", tmp_path)
     project = pr.new_project("Before")
     store.save(project)
     project["name"] = "After"
+    # Simulate a failed file replacement to test recovery during saving.
     def fail(*args):
         raise OSError("Disk unavailable")
     monkeypatch.setattr(pr.os, "replace", fail)
@@ -90,6 +96,7 @@ def test_atomic_failure_leaves_previous_revision_and_no_temporary_files(tmp_path
     assert not list(store.root.rglob("*.tmp"))
 
 
+# Check that malformed saved tables are rejected before they are used.
 @pytest.mark.parametrize("table", [
     {"columns": [["A"]], "data": [["La"]]},
     {"columns": ["A"], "data": [[{"symbol": "La"}]]},
@@ -103,12 +110,14 @@ def test_malformed_project_tables_are_rejected(table):
         pr.read_bundle(json.dumps(project).encode())
 
 
+# Check that project exports meet the same rules required when reopening them.
 def test_export_cannot_create_a_bundle_that_import_would_reject(monkeypatch):
     monkeypatch.setattr(pr, "MAX_BUNDLE_BYTES", 10)
     with pytest.raises(ValueError, match="limit"):
         pr.bundle_bytes(pr.new_project())
 
 
+# Check that missing properties do not make an experiment appear artificially similar.
 def test_missing_measurements_cannot_be_perfect_neighbors():
     data = pd.DataFrame({"Formula": ["unknown", "close", "far"], "AN": [np.nan, 1, 3],
                          "BN": [np.nan, 2, 4]}, index=[7, 7, 7])
@@ -119,6 +128,7 @@ def test_missing_measurements_cannot_be_perfect_neighbors():
     assert nearest_neighbors(data, pd.DataFrame({"AN": [np.nan], "BN": [np.inf]})).empty
 
 
+# Check that the comparison map handles constant, missing, and infinite values appropriately.
 def test_pca_rejects_constant_data_and_handles_nonfinite_measurements():
     assert not compute_pca(pd.DataFrame({"AN": [1]*3, "BN": [2]*3}))["ok"]
     data = pd.DataFrame({"AN": [1, 2, 3, np.inf], "BN": [2, 3, 4, np.nan],
@@ -129,8 +139,10 @@ def test_pca_rejects_constant_data_and_handles_nonfinite_measurements():
     assert result["coords"].Formula.tolist() == ["a", "b", "c"]
 
 
+# Check that one user's chart theme does not change another user's chart.
 def test_chart_themes_are_isolated_between_concurrent_users():
     barrier = Barrier(2)
+    # Build a chart with a chosen theme while another test user is doing the same.
     def chart(mode):
         set_chart_theme(mode)
         barrier.wait(timeout=10)
@@ -140,17 +152,20 @@ def test_chart_themes_are_isolated_between_concurrent_users():
     assert colors == ["#24324a", "#dbe4f3"]
 
 
+# Check that text resembling an Excel formula is exported as ordinary text.
 def test_excel_exports_preserve_formula_like_text_as_literal_cells():
     book = load_workbook(io.BytesIO(dataframe_to_excel_bytes(pd.DataFrame({"Notes": ["=1+1", "ordinary"]}))))
     assert book.active["A2"].value == "=1+1"
     assert book.active["A2"].data_type == "s"
 
 
+# Check that imports preserve leading zeros in codes and notes containing the text NA.
 def test_import_preserves_text_codes_and_literal_na_notes():
     frame = read_table_from_bytes(b"LabGroup,Instructor,Semester,ObservationNotes\n007,001,2026,NA\n", "text.csv")
     assert frame.iloc[0].tolist() == ["007", "001", "2026", "NA"]
 
 
+# Check that a missing ratio for an occupied optional site stays unknown in calculations.
 def test_missing_optional_ratio_stays_unknown_in_descriptors():
     atomic = load_atomic_table_from_bytes(None)
     raw = pd.DataFrame([dict(A="La", AN=2, AP="Sr", APN=None, B="Ni", BN=1, O="O", ON=4, P="pure", Bub="yes")])
@@ -163,6 +178,7 @@ def test_missing_optional_ratio_stays_unknown_in_descriptors():
     assert "AP" in validate_compound_rows(clean_and_encode_data(raw, atomic), atomic).Field.tolist()
 
 
+# Check that missing or repeated experiment IDs produce useful validation messages.
 def test_submission_reports_missing_ids_and_repeated_ids_without_crashing():
     raw = pd.DataFrame([dict(A="La", AN=2, B="Ni", BN=1, O="O", ON=4)], index=["custom"])
     _, issues = submission_table(raw, load_atomic_table_from_bytes(None))
@@ -172,12 +188,15 @@ def test_submission_reports_missing_ids_and_repeated_ids_without_crashing():
     assert issues.Issue.str.contains("unique experiment ID").sum() == 2
 
 
+# Check that a small ratio change is treated as a changed experiment, not an unchanged
+# resubmission.
 def test_small_stoichiometry_changes_are_conflicts_not_duplicates():
     frame = pd.DataFrame({"ExperimentID": ["a"*32]*2, "AN": [1, 1.0000000000001]}, index=[1, 1])
     assert duplicate_keys(frame).iloc[0] != duplicate_keys(frame).iloc[1]
     assert len(conflicting_experiments(frame)) == 2
 
 
+# Check that submission coverage keeps sections separate and counts only confirmed outcomes.
 def test_coverage_separates_sections_and_counts_only_confirmed_results():
     frame = pd.DataFrame({"LabGroup": ["01"]*3, "Instructor": ["A", "A", "B"],
                           "Semester": ["Fall"]*3, "Bub": ["yes", "not tested", "maybe"],
@@ -187,11 +206,13 @@ def test_coverage_separates_sections_and_counts_only_confirmed_results():
     assert summary["Confirmed bubble tests"].tolist() == [1, 0]
 
 
+# Check that navigation alone does not save a new revision, while a project rename does.
 def test_autosave_skips_navigation_but_captures_renames(tmp_path, monkeypatch):
     monkeypatch.setenv("LATTICE_LOCAL_MODE", "1")
     monkeypatch.setattr(pr, "ROOT", tmp_path)
     saved = []
     save = pr.ProjectStore.save
+    # Record a save call so the test can check when autosave actually runs.
     def track(store, project):
         saved.append(project["name"])
         return save(store, project)
@@ -209,6 +230,7 @@ def test_autosave_skips_navigation_but_captures_renames(tmp_path, monkeypatch):
     assert not at.exception
 
 
+# Check that canceling an edit preserves the record and a new observation gets a new ID.
 def test_cancel_edit_keeps_original_and_new_entry_gets_new_id():
     at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=45).run()
     next(b for b in at.button if b.label == "Start a blank results sheet").click().run()
@@ -242,6 +264,7 @@ def test_cancel_edit_keeps_original_and_new_entry_gets_new_id():
     assert not at.exception
 
 
+# Check that model settings persist when the user changes screens.
 def test_model_preferences_survive_navigation_and_widget_cleanup():
     at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=45).run()
     next(b for b in at.button if b.label == "Try the sample investigation").click().run()

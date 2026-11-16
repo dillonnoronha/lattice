@@ -16,8 +16,10 @@ from sklearn.preprocessing import StandardScaler
 MODEL_VERSION = "2.0"
 
 
+# Keep equivalent compositions together when separating model training and testing data.
 def composition_groups(df: pd.DataFrame) -> pd.Series:
     """Group equivalent site compositions, including scaled stoichiometry."""
+    # Give equivalent formulas the same comparison label, even when their ratios are scaled.
     def key(row):
         sites = []
         totals = []
@@ -37,6 +39,8 @@ def composition_groups(df: pd.DataFrame) -> pd.Series:
     return df.apply(key, axis=1)
 
 
+# Prepare numeric model inputs while distinguishing absent optional elements from missing
+# measurements.
 def feature_frame(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     frame = df.reindex(columns=columns).apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
     for symbol, ratio in [("AP", "APN"), ("BP", "BPN"), ("BDP", "BDPN")]:
@@ -46,6 +50,7 @@ def feature_frame(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     return frame
 
 
+# Build a prediction model with its own missing-value handling and, when needed, scaling.
 def new_estimator(seed: int, logistic: bool = False) -> Pipeline:
     steps = [("impute", SimpleImputer(strategy="median", keep_empty_features=True))]
     if logistic:
@@ -57,6 +62,7 @@ def new_estimator(seed: int, logistic: bool = False) -> Pipeline:
     return Pipeline(steps)
 
 
+# Train and evaluate an outcome model, then fit a separate model for new predictions.
 def evaluate(df: pd.DataFrame, target: str = "bubble", use_phase: bool = False,
              use_mass: bool = False, random_state: int = 42,
              evaluation: str = "composition", holdout_semester: str = "") -> dict:
@@ -177,6 +183,7 @@ def evaluate(df: pd.DataFrame, target: str = "bubble", use_phase: bool = False,
     return metrics
 
 
+# Score a proposed compound and explain gaps in the data supporting that prediction.
 def predict_candidate(result: dict, row: pd.DataFrame) -> dict:
     """Predict using the saved fitted transformation and describe support limits."""
     X = feature_frame(row, result["feature_columns"])

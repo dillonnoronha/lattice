@@ -27,6 +27,7 @@ INSTRUCTORS = [
 ]
 
 
+# Choose fonts for the printable guides, using standard alternatives when needed.
 def fonts():
     directory = Path("C:/Windows/Fonts")
     files = [("Body", "calibri.ttf"), ("BodyBold", "calibrib.ttf"),
@@ -40,6 +41,7 @@ def fonts():
     return "Helvetica", "Helvetica-Bold", "Times-Roman"
 
 
+# Build one formatted PDF instruction sheet for the selected audience.
 def make(audience, subtitle, color, steps, notes, footer):
     regular, bold, title = fonts()
     ink, gray = HexColor("#2B3033"), HexColor("#646B70")
@@ -51,6 +53,7 @@ def make(audience, subtitle, color, steps, notes, footer):
     page.setTitle(f"Lattice | Lab results for {audience}")
     page.setAuthor("Lattice - General Chemistry II")
 
+    # Place and wrap a paragraph on the PDF page, then return the next writing position.
     def text(value, x, top, width, style=body):
         paragraph = Paragraph(value, style)
         _, height = paragraph.wrap(width, 700)
@@ -82,6 +85,7 @@ def make(audience, subtitle, color, steps, notes, footer):
     print(path)
 
 
+# Generate the separate Student and Instructor PDF instruction guides.
 def main():
     make("Students", "Recording and submitting your experiments", "#376558", STUDENTS,
          ["Submit actual observations, not sample data or predictions. Keep experiment IDs unchanged and use group codes instead of student names or emails."],

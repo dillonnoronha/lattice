@@ -12,6 +12,7 @@ from projects import new_project, encode_frame, bundle_bytes, read_bundle, decod
 from submissions import submission_table, conflicting_experiments
 
 
+# Create a valid example Student submission with optional field changes for a test.
 def record(**changes):
     row = dict(ExperimentID=uuid.uuid4().hex, LabGroup="G07", Instructor="CHEM120-L02",
                Semester="Fall 2026", ExperimentDate="2026-11-12", Trial=1,
@@ -21,6 +22,7 @@ def record(**changes):
     return row
 
 
+# Check that CSV export, import, and project saving preserve experiment IDs and class details.
 def test_submission_csv_round_trip_preserves_identity_and_metadata():
     original = pd.DataFrame([record()])
     table, issues = submission_table(original, load_atomic_table_from_bytes(None))
@@ -39,6 +41,7 @@ def test_submission_csv_round_trip_preserves_identity_and_metadata():
     assert restored.iloc[0].LabGroup == "G07"
 
 
+# Check that separate trials and older records without IDs survive merging.
 def test_repeat_trials_and_legacy_rows_are_not_deleted():
     first = pd.DataFrame([record()])
     second = first.copy()
@@ -51,6 +54,8 @@ def test_repeat_trials_and_legacy_rows_are_not_deleted():
     assert find_merge_duplicates(legacy, legacy).empty
 
 
+# Check that unchanged resubmissions are removed but changed mixed-site compositions are
+# flagged.
 def test_reupload_removed_but_mixed_site_changes_are_conflicts():
     first = pd.DataFrame([record()])
     same = first.copy()
@@ -65,6 +70,7 @@ def test_reupload_removed_but_mixed_site_changes_are_conflicts():
     assert len(conflicting_experiments(combined)) == 2
 
 
+# Check that ambiguous or unperformed experiments are not counted as negative measured outcomes.
 def test_unknown_and_unperformed_outcomes_are_not_failures():
     atomic = load_atomic_table_from_bytes(None)
     for phase in ["pure", "not made"]:
@@ -75,12 +81,14 @@ def test_unknown_and_unperformed_outcomes_are_not_failures():
     assert "Bub" in issues.Field.tolist()
 
 
+# Check that submissions require class details and explicitly chosen outcomes.
 def test_submission_requires_metadata_and_no_default_outcomes():
     _, issues = submission_table(pd.DataFrame([record(LabGroup="", Semester="", ExperimentDate="", P="", Bub="")]),
                                 load_atomic_table_from_bytes(None))
     assert {"LabGroup", "Semester", "ExperimentDate", "P", "Bub"}.issubset(issues.Field)
 
 
+# Check that Students can enter, edit, and download their own observations from a blank sheet.
 def test_student_starts_blank_and_downloads_only_own_records():
     at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=45).run()
     next(b for b in at.button if b.label == "Start a blank results sheet").click().run()
@@ -117,6 +125,7 @@ def test_student_starts_blank_and_downloads_only_own_records():
     assert any(b.label == "Download student submission CSV" for b in at.get("download_button"))
 
 
+# Check that sample investigation rows cannot be submitted as the Student's own experiments.
 def test_sample_data_cannot_be_downloaded_as_student_results():
     at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=45).run()
     next(b for b in at.button if b.label == "Try the sample investigation").click().run()

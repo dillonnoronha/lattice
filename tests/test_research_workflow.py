@@ -19,11 +19,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+# Load the chemistry reference tables needed by the workflow checks.
 @pytest.fixture
 def chemistry():
     return load_atomic_table_from_bytes(None), load_en_table_from_bytes(None), load_radii_table_from_bytes(None)
 
 
+# Create example chemistry data for checking the research workflow.
 @pytest.fixture
 def dataset(chemistry):
     raw = pd.DataFrame([dict(A="Ca", AN=1.0, B="Mn" if i % 2 else "Fe", BN=1.0,
@@ -33,6 +35,7 @@ def dataset(chemistry):
     return add_chemical_descriptors(clean_and_encode_data(raw, chemistry[0]), *chemistry)
 
 
+# Check that unknown outcomes are excluded from confirmed success and failure counts.
 def test_unknown_outcomes_are_not_failures(chemistry):
     raw = pd.DataFrame([dict(A="Ca", AN=1, B="Fe", BN=1, O="O", ON=3, Bub=b, P=p)
                         for b, p in [("yes", "pure"), ("no", "impure"), ("maybe", "not made"), ("", "")]])
@@ -48,6 +51,7 @@ def test_unknown_outcomes_are_not_failures(chemistry):
     assert (periodic.BubbleYesPct == 50).all()
 
 
+# Check that missing chemistry reference values are not replaced with invented properties.
 def test_missing_descriptors_remain_unknown(chemistry):
     raw = pd.DataFrame([dict(A="He", AN=1, B="Fe", BN=1, O="O", ON=3),
                         dict(A="Ca", AN=1, B="Fe", BN=1, O="O", ON=3)])
@@ -56,12 +60,14 @@ def test_missing_descriptors_remain_unknown(chemistry):
     assert d.iloc[0].MissingDescriptors > 0
 
 
+# Check that equivalent compositions never cross the default training/testing split.
 def test_grouped_evaluation_has_no_composition_overlap(dataset):
     result = evaluate(pd.concat([dataset, dataset], ignore_index=True))
     assert result["ok"]
     assert not set(result["training_compositions"]) & set(result["test_compositions"])
 
 
+# Check that reordered or proportionally scaled compositions receive the same group label.
 def test_equivalent_compositions_group_together(dataset):
     d = dataset.iloc[:1].copy()
     scaled = d.copy()
@@ -69,6 +75,7 @@ def test_equivalent_compositions_group_together(dataset):
     assert composition_groups(d).iloc[0] == composition_groups(scaled).iloc[0]
 
 
+# Check that missing-value replacements are learned only from the training portion.
 def test_imputation_learns_only_training_data(dataset):
     d = dataset.copy()
     d["A_avg_EN"] = np.arange(len(d), dtype=float)
@@ -81,6 +88,7 @@ def test_imputation_learns_only_training_data(dataset):
     assert set(d.iloc[result["test_indices"]].Semester) == {"Spring"}
 
 
+# Check that predictions reuse training-based replacements and flag unfamiliar inputs.
 def test_prediction_uses_training_imputer_and_flags_unfamiliar(dataset):
     result = evaluate(dataset)
     row = dataset.iloc[:1].copy()
@@ -93,6 +101,8 @@ def test_prediction_uses_training_imputer_and_flags_unfamiliar(dataset):
     assert pred["support"] == "Limited"
 
 
+# Check that too few examples of an outcome produce an explanation instead of a misleading
+# model.
 def test_rare_class_returns_explanation(dataset):
     d = dataset.copy()
     d["Bub"] = "no"
@@ -100,6 +110,7 @@ def test_rare_class_returns_explanation(dataset):
     assert not evaluate(d)["ok"]
 
 
+# Check that inconsistent optional elements and ratios are reported for correction.
 def test_invalid_optional_stoichiometry_is_flagged(chemistry):
     d = clean_and_encode_data(pd.DataFrame([dict(A="Ca", AN=1, AP="Sr", APN=None,
                            B="Fe", BN=1, O="O", ON=3, P="pure", Bub="yes")]), chemistry[0])
@@ -107,6 +118,7 @@ def test_invalid_optional_stoichiometry_is_flagged(chemistry):
     assert "APN" in issues.Field.tolist()
 
 
+# Check that public exports contain approved fields and omit contact-related diagnostics.
 def test_public_exports_use_allowlist_and_remove_contact_diagnostics():
     d = pd.DataFrame([dict(Formula="CaFeO3", Email="private@example.org", Name="Private",
                          Members="Private", GroupNumber="Private group", SurpriseContact="secret")])
@@ -115,6 +127,7 @@ def test_public_exports_use_allowlist_and_remove_contact_diagnostics():
     assert "private@example.org" not in public_view(issues).to_csv()
 
 
+# Check that Instructor access requires both a verified email and an approved account.
 def test_instructor_requires_verified_allowlisted_identity():
     config = {"instructor_emails": ["teacher@example.org"]}
     assert authorized_instructor({"email":"teacher@example.org", "email_verified":True}, config)
@@ -123,6 +136,8 @@ def test_instructor_requires_verified_allowlisted_identity():
     assert not authorized_instructor({"email":"teacher@example.org", "email_verified":"true"}, config)
 
 
+# Check that saving and reopening a project preserves its hypothesis while omitting contact
+# columns.
 def test_project_round_trip_privacy_and_hypothesis(dataset):
     p = new_project("Research")
     dataset["Email"] = "private@example.org"
@@ -135,6 +150,7 @@ def test_project_round_trip_privacy_and_hypothesis(dataset):
     assert restored["candidates"][0]["rationale"] == "A falsifiable hypothesis"
 
 
+# Check that saved revisions are recoverable and different users have separate project folders.
 def test_storage_revisions_and_owner_isolation(tmp_path):
     a = ProjectStore("owner-a", tmp_path)
     b = ProjectStore("owner-b", tmp_path)
@@ -151,11 +167,13 @@ def test_storage_revisions_and_owner_isolation(tmp_path):
     with pytest.raises(ValueError): a.load(p["id"], "../escape")
 
 
+# Check that malformed portable project files are rejected.
 def test_malformed_bundle_rejected():
     with pytest.raises(ValueError): read_bundle(b"not json")
     with pytest.raises(ValueError): read_bundle(b'{"schema_version":99}')
 
 
+# Check that unsupported saved settings and invalid notebook outcomes are rejected.
 def test_invalid_saved_settings_and_observations_rejected(dataset):
     p = new_project()
     p["settings"] = {"evaluation_mode": "Not a supported split"}
@@ -166,6 +184,7 @@ def test_invalid_saved_settings_and_observations_rejected(dataset):
     with pytest.raises(ValueError): read_bundle(json.dumps(p).encode())
 
 
+# Check that uncertain outcomes and invalid ratios are excluded from model training.
 def test_model_excludes_uncertain_outcomes_and_bad_compositions(dataset):
     d = dataset.copy()
     d.loc[0, "Bub"] = "maybe"
@@ -175,12 +194,14 @@ def test_model_excludes_uncertain_outcomes_and_bad_compositions(dataset):
     assert result["excluded_rows"] == 2
 
 
+# Check that an incomplete formula does not receive a misleading total mass.
 def test_partial_formula_mass_is_not_reported(chemistry):
     d = clean_and_encode_data(pd.DataFrame([dict(A="XX", AN=1, B="Fe", BN=1, O="O", ON=3)]), chemistry[0])
     described = add_chemical_descriptors(d, *chemistry)
     assert pd.isna(described.iloc[0].FormulaMass)
 
 
+# Open the built-in sample project for interface tests.
 def start_sample():
     at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=45).run()
     assert not at.exception
@@ -189,6 +210,7 @@ def start_sample():
     return at
 
 
+# Check that every main research screen can open without an error.
 def test_all_research_workspaces_render_without_exceptions():
     at = start_sample()
     for page in ["Prepare data", "Investigate", "Experiment Designer", "Lab notebook", "Share findings", "Overview"]:
@@ -196,6 +218,7 @@ def test_all_research_workspaces_render_without_exceptions():
         assert not at.exception, (page, [x.message for x in at.exception])
 
 
+# Check that investigation views and the observation form can open successfully.
 def test_all_investigation_views_and_manual_entry_render():
     at = start_sample()
     at.radio(key="workspace_page").set_value("Investigate").run()
@@ -210,6 +233,7 @@ def test_all_investigation_views_and_manual_entry_render():
     assert not at.exception
 
 
+# Check that editing a hypothesis makes the previous report outdated.
 def test_report_invalidates_after_hypothesis_change():
     at = start_sample()
     at.radio(key="workspace_page").set_value("Share findings").run()
@@ -219,6 +243,7 @@ def test_report_invalidates_after_hypothesis_change():
     assert not any("Download printable report" in x.label for x in at.get("download_button"))
 
 
+# Check the full path from saving a hypothesis to recording and adding its measured outcome.
 def test_save_hypothesis_record_observation_and_add_to_data():
     at = start_sample()
     at.radio(key="workspace_page").set_value("Experiment Designer").run()
@@ -250,6 +275,8 @@ def test_save_hypothesis_record_observation_and_add_to_data():
     assert any(b.label == "Download student submission CSV" for b in at.get("download_button"))
 
 
+# Check that switching projects clears unfinished entries and the previous dataset's
+# corrections.
 def test_dataset_switch_clears_staged_records_and_corrections():
     at = start_sample()
     at.session_state["manual_entries"] = pd.DataFrame([dict(A="Ca", AN=1, B="Fe", BN=1, O="O", ON=3)])
@@ -260,6 +287,7 @@ def test_dataset_switch_clears_staged_records_and_corrections():
     assert at.session_state["element_fixes"] == {}
 
 
+# Check that analysis filters persist and Student exports omit contact information.
 def test_filters_persist_across_views_and_student_downloads_exclude_contacts():
     at = start_sample()
     if any(x.key == "scope_semesters" for x in at.multiselect):
@@ -272,6 +300,7 @@ def test_filters_persist_across_views_and_student_downloads_exclude_contacts():
     assert not any("Full scoped dataset" in x.label for x in at.get("download_button"))
 
 
+# Check that a research report can be built even when there is insufficient modeling data.
 def test_report_generation_without_models_is_supported():
     at = start_sample()
     at.radio(key="workspace_page").set_value("Share findings").run()

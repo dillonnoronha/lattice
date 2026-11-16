@@ -14,6 +14,7 @@ SUBMISSION_COLUMNS = ["ExperimentID", "LabGroup", "Instructor", "Semester", "Exp
                       "O", "ON", "P", "Bub", "ObservationNotes"]
 
 
+# Prepare the Student submission fields and report every invalid recorded observation.
 def submission_table(entries: pd.DataFrame, atomic: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Validate every recorded row; never silently drop a student's observations."""
     from pipeline import clean_and_encode_data, validate_compound_rows
@@ -22,6 +23,7 @@ def submission_table(entries: pd.DataFrame, atomic: pd.DataFrame) -> tuple[pd.Da
     clean = clean_and_encode_data(entries.reset_index(drop=True), atomic)
     issues = validate_compound_rows(clean, atomic).to_dict("records")
     for index, row in clean.iterrows():
+        # Record a problem with a specific field in the current observation.
         def issue(field, message):
             issues.append({"Row": index + 1, "Field": field, "Issue": message})
         for field in ["LabGroup", "Instructor", "Semester"]:
@@ -47,6 +49,7 @@ def submission_table(entries: pd.DataFrame, atomic: pd.DataFrame) -> tuple[pd.Da
     return clean.reindex(columns=SUBMISSION_COLUMNS), pd.DataFrame(issues)
 
 
+# Convert a notebook's measured result into an observation suitable for Student submission.
 def observation_record(candidate: dict) -> pd.DataFrame:
     """Turn a saved notebook observation into the same record as the entry form."""
     from projects import decode_frame
@@ -62,6 +65,7 @@ def observation_record(candidate: dict) -> pd.DataFrame:
     return raw
 
 
+# Count received experiments and confirmed outcomes by section, semester, and lab group.
 def submission_summary(frame: pd.DataFrame) -> pd.DataFrame:
     """Counts by section, semester and anonymous group, without inferring missing students."""
     if frame.empty or "LabGroup" not in frame:
@@ -75,6 +79,7 @@ def submission_summary(frame: pd.DataFrame) -> pd.DataFrame:
                                     "Confirmed phases": ("Confirmed phases", "sum")}).reset_index()
 
 
+# Build comparison labels that distinguish unchanged resubmissions from separate trials.
 def duplicate_keys(frame: pd.DataFrame) -> pd.Series:
     """Only explicit experiment IDs plus identical recorded content establish a duplicate.
 
@@ -82,6 +87,7 @@ def duplicate_keys(frame: pd.DataFrame) -> pd.Series:
     deliberately preserved, even if they look identical. Conflicting versions are retained.
     """
     numeric = {"AN", "APN", "BN", "BPN", "BDPN", "ON", "Trial"}
+    # Combine one experiment's ID and standardized contents for duplicate checking.
     def key(row):
         identity = row.get("ExperimentID", "")
         if pd.isna(identity) or not str(identity).strip():
@@ -99,6 +105,7 @@ def duplicate_keys(frame: pd.DataFrame) -> pd.Series:
     return frame.apply(key, axis=1) if not frame.empty else pd.Series(dtype=object)
 
 
+# Find different recorded versions of the same experiment for human review.
 def conflicting_experiments(frame: pd.DataFrame) -> pd.DataFrame:
     """Identify repeated IDs with different contents; no automatic winner is selected."""
     if frame.empty or "ExperimentID" not in frame:
@@ -111,6 +118,7 @@ def conflicting_experiments(frame: pd.DataFrame) -> pd.DataFrame:
     return frame[ids.isin(conflicts)].copy()
 
 
+# Offer the Student CSV download only when all recorded observations pass validation.
 def render_submission_download(entries: pd.DataFrame, atomic: pd.DataFrame) -> None:
     import streamlit as st
     from pipeline import dataframe_to_csv_bytes
@@ -133,6 +141,7 @@ def render_submission_download(entries: pd.DataFrame, atomic: pd.DataFrame) -> N
                "Use a new entry for a real repeat trial. Do not enter student names or emails in notes or group codes.")
 
 
+# Show uploaded observations with delete, confirmation, and restore controls for this batch.
 def render_intake_review(combined: pd.DataFrame, batch_key: str = "") -> pd.DataFrame:
     """Keep explicit row exclusions for this exact batch across Streamlit reruns."""
     import streamlit as st
@@ -144,16 +153,20 @@ def render_intake_review(combined: pd.DataFrame, batch_key: str = "") -> pd.Data
         review = {"signature": signature, "deleted": set(), "pending": None}
         st.session_state.intake_review = review
 
+    # Select the exact uploaded row whose deletion needs confirmation.
     def request_delete(index):
         review["pending"] = index
 
+    # Exclude the confirmed row from this batch's combined results.
     def confirm_delete(index):
         review["deleted"].add(index)
         review["pending"] = None
 
+    # Cancel the pending deletion and keep the uploaded row.
     def cancel_delete():
         review["pending"] = None
 
+    # Bring back all rows deleted during the current batch review.
     def restore():
         review["deleted"].clear()
         review["pending"] = None
@@ -187,6 +200,7 @@ def render_intake_review(combined: pd.DataFrame, batch_key: str = "") -> pd.Data
     return kept
 
 
+# Check remaining uploaded rows and link each problem to its original file and row.
 def intake_validation_issues(reviewed: pd.DataFrame, atomic: pd.DataFrame) -> pd.DataFrame:
     """Validate remaining uploaded rows, preserving file and source-row attribution."""
     uploaded = reviewed.loc[reviewed["_IntakeValidate"]].reset_index(drop=True)
@@ -199,6 +213,7 @@ def intake_validation_issues(reviewed: pd.DataFrame, atomic: pd.DataFrame) -> pd
     return issues
 
 
+# Combine and review Student CSVs, then export or open the accepted class results.
 def render_submission_intake(existing: pd.DataFrame, atomic: pd.DataFrame) -> None:
     """Anonymous submission intake; the separate full-contact combine tool stays gated."""
     import streamlit as st

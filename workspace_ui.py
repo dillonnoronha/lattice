@@ -28,6 +28,8 @@ from pipeline import (
 PAGES = ["Overview", "Prepare data", "Investigate", "Experiment Designer", "Lab notebook", "Share findings"]
 
 
+# Open a project and clear leftover form values, previews, and corrections from the previous
+# one.
 def activate(project: dict, raw: pd.DataFrame | None = None) -> None:
     # Widget state and staged entries must never leak into another dataset.
     keep = {"dark_mode", "_store_owner"}
@@ -49,6 +51,7 @@ def activate(project: dict, raw: pd.DataFrame | None = None) -> None:
             st.session_state[key] = value
 
 
+# Copy current edits into the project and save a new revision only if something changed.
 def sync_project(store: pr.ProjectStore | None) -> None:
     if "project" not in st.session_state:
         return
@@ -77,6 +80,8 @@ def sync_project(store: pr.ProjectStore | None) -> None:
             st.session_state.save_error = str(exc)
 
 
+# Clear entered observation details and return the composition fields to their starting
+# defaults.
 def reset_observation_form() -> None:
     # Explicit values reset the browser's form widgets too; deleting keys alone
     # lets Streamlit reconnect them to their previous frontend values.
@@ -91,6 +96,8 @@ def reset_observation_form() -> None:
     st.session_state.pop("editing_entry_id", None)
 
 
+# Remove one added experiment by ID while preserving other trials and its separate notebook
+# entry.
 def delete_recorded_observation(experiment_id: str) -> None:
     """Delete by stable identity, including when table indices have changed."""
     entries = st.session_state.manual_entries
@@ -110,6 +117,7 @@ def delete_recorded_observation(experiment_id: str) -> None:
     pr.append_event(st.session_state.project, "Recorded observation deleted", experiment_id)
 
 
+# Clear added observations and the form while keeping imported data and notebook entries.
 def start_fresh_observations() -> None:
     """Clear added dataset observations, preserving imports and the notebook."""
     entries = st.session_state.manual_entries
@@ -125,6 +133,7 @@ def start_fresh_observations() -> None:
     pr.append_event(project, "Recorded observations cleared", f"Removed {len(entries)} added observations.")
 
 
+# Show the controls for creating, importing, and reopening projects.
 def sidebar_projects(store: pr.ProjectStore | None) -> None:
     with st.sidebar.expander("Open or create a project", expanded="project" not in st.session_state):
         if st.button("Start a blank results sheet", type="primary", width="stretch"):
@@ -209,6 +218,7 @@ def sidebar_projects(store: pr.ProjectStore | None) -> None:
                         st.error(str(exc))
 
 
+# Apply the selected semester, Instructor, and lab-group filters to the analysis data.
 def choose_scope(df: pd.DataFrame) -> pd.DataFrame:
     with st.sidebar.expander("Analysis scope", expanded=True):
         st.caption("These filters apply to every research workspace and analysis export. Empty = all.")
@@ -228,6 +238,7 @@ def choose_scope(df: pd.DataFrame) -> pd.DataFrame:
     return result.copy()
 
 
+# Let the user choose a model's purpose, inputs, and method of checking its predictions.
 def model_settings(df: pd.DataFrame) -> dict:
     for key, value in st.session_state.project.get("settings", {}).items():
         if key not in st.session_state and key in {"model_mode", "include_mass", "evaluation_mode", "holdout_semester"}:
@@ -254,15 +265,18 @@ def model_settings(df: pd.DataFrame) -> dict:
             "holdout_semester": semester, "random_state": 42}
 
 
+# Capture which data, filters, and model settings the current analysis uses.
 def current_manifest(df: pd.DataFrame, settings: dict | None = None) -> dict:
     p = st.session_state.project
     return pr.analysis_manifest(df, p.get("filters", {}), settings or p.get("settings", {}))
 
 
+# Display a confirmed-outcome rate as a percentage, or a dash when no results are known.
 def rate_text(series: pd.Series) -> str:
     return f"{series.mean():.0%}" if series.notna().any() else "—"
 
 
+# Show the confirmed-result count and a 95% uncertainty interval for its outcome rate.
 def wilson(series: pd.Series) -> str:
     values = series.dropna()
     n = len(values)
@@ -274,6 +288,7 @@ def wilson(series: pd.Series) -> str:
     return f"{int(values.sum())}/{n} confirmed · 95% interval {center-margin:.0%}–{center+margin:.0%}"
 
 
+# Show the project's main results, data-quality findings, and submission coverage.
 def overview(df: pd.DataFrame, issues: pd.DataFrame, atomic, en, radii) -> None:
     from submissions import submission_summary
     st.subheader("Your investigation at a glance")
@@ -313,6 +328,7 @@ def overview(df: pd.DataFrame, issues: pd.DataFrame, atomic, en, radii) -> None:
             st.caption("Missing properties stay unknown in tables. Model imputation is learned from training data only.")
 
 
+# Let the user search for a compound and inspect its results and calculated properties.
 def compound_details(df: pd.DataFrame) -> None:
     st.markdown("#### Compound explorer")
     query = st.text_input("Search formulas", placeholder="e.g. La, Ni, CaMnO3")
@@ -334,6 +350,7 @@ def compound_details(df: pd.DataFrame) -> None:
         st.caption("Blank = unavailable, not zero. Ionic radii use reference-table oxidation/coordination assumptions; tolerance factor is not a structure determination.")
 
 
+# Explain model evaluation results and show when the available evidence is insufficient.
 def model_evidence(result: dict, title: str) -> None:
     st.markdown(f"#### {title}")
     if not result.get("ok"):
@@ -359,6 +376,7 @@ def model_evidence(result: dict, title: str) -> None:
         st.caption("Feature importance describes model behavior, not chemical causes. Prediction uses a separate refit on all eligible records in scope.")
 
 
+# Evaluate proposed compositions and let Students save their experimental hypotheses.
 def designer(df: pd.DataFrame, atomic, en, radii) -> None:
     st.subheader("Experiment Designer")
     st.write("Compare a proposed composition with class evidence, then save a testable hypothesis.")
@@ -460,6 +478,8 @@ def designer(df: pd.DataFrame, atomic, en, radii) -> None:
                 st.caption("A model sensitivity exercise, not a causal or chemical feasibility claim.")
 
 
+# Keep hypotheses, predictions, and measured results together, with an explicit add-to-data
+# step.
 def notebook(atomic, en, radii) -> None:
     from datetime import date
     from submissions import observation_record, submission_table
@@ -535,6 +555,7 @@ def notebook(atomic, en, radii) -> None:
             st.caption("Added as a dataset snapshot. Later notebook edits do not silently change that record.")
 
 
+# Offer data exports, reports, portable project downloads, and saved-version recovery.
 def share(df: pd.DataFrame, issues: pd.DataFrame, outliers: pd.DataFrame, store) -> None:
     st.subheader("Share findings")
     p = st.session_state.project
@@ -604,6 +625,7 @@ def share(df: pd.DataFrame, issues: pd.DataFrame, outliers: pd.DataFrame, store)
             st.caption("Open a downloaded project bundle to restore work. Enable local storage or sign in for automatic disk snapshots.")
 
 
+# Coordinate sign-in, project data, calculations, filters, and the currently selected workspace.
 def run() -> None:
     import app as views
     st.set_page_config(page_title="Lattice", page_icon="🧪", layout="wide")
@@ -679,6 +701,8 @@ def run() -> None:
                 if selected and col in source_scope:
                     source_scope = source_scope[source_scope[col].astype(str).isin(selected)]
             proposals = propose_element_fixes(source_scope, atomic)
+            # Limit cleaning and correction messages to the records in the selected analysis
+            # scope.
             def scoped_log(log):
                 if log.empty or "SourceRow" not in source_scope:
                     return log

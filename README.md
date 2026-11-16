@@ -88,5 +88,6 @@ Python 3.13 environment, including pytest and optional browser QA tooling.
 .\.venv\Scripts\python.exe tests/browser_smoke.py
 ```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md), [STUDENT_GUIDE.md](STUDENT_GUIDE.md), and
+See the [code map](CODE_MAP.md) for a plain-English guide to the files and features, plus
+[ARCHITECTURE.md](ARCHITECTURE.md), [STUDENT_GUIDE.md](STUDENT_GUIDE.md), and
 [INSTRUCTOR_HANDOFF.md](INSTRUCTOR_HANDOFF.md).

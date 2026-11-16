@@ -4,6 +4,8 @@ import pytest
 import ensure_runtime
 
 
+# Check that desktop setup installs packages only when their required versions are not
+# satisfied.
 @pytest.mark.parametrize("installed, needs_install", [
     ({"streamlit": "1.64.0", "httpx": "0.28.1"}, False),
     ({"streamlit": "1.64.0", "httpx": "0.29.0"}, False),
@@ -18,6 +20,7 @@ def test_runtime_installs_only_for_unsatisfied_requirements(tmp_path, monkeypatc
         'not-needed>=1; python_version < "3.0"\n', encoding="utf-8")
     monkeypatch.setattr(ensure_runtime, "__file__", str(tmp_path / "ensure_runtime.py"))
 
+    # Pretend particular package versions are installed so setup behavior can be checked safely.
     def installed_version(name):
         if name not in installed:
             raise ensure_runtime.PackageNotFoundError(name)
