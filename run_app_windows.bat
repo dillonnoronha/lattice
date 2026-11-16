@@ -10,6 +10,6 @@ set LATTICE_LOCAL_MODE=1
 ".venv\Scripts\python.exe" -m streamlit run app.py --server.address 127.0.0.1
 goto :end
 :error
-echo Setup failed. Install Python 3.13 and check the error above.
+echo Setup failed. Check the error above before trying again.
 :end
 pause

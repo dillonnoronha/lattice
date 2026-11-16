@@ -19,6 +19,14 @@ Updated November 13, 2026.
    observation**, change the form, build/check, and **Save changes to observation**. This replaces
    the saved record while preserving its experiment ID. **Cancel edit and start a new observation**
    leaves the earlier experiment intact.
+   Use **Delete observation** beside a recorded result, then **Confirm delete**, to remove
+   just that experiment from the project dataset and submission CSV. A separately recorded
+   notebook observation remains in the notebook and can be explicitly added again.
+   **Start fresh → Clear recorded observations** removes all observations added through the
+   entry form or notebook from the project dataset and submission CSV, and resets the entry form.
+   Imported data and notebook entries are kept; notebook observations can be explicitly added again.
+   Other projects, older saved revisions, and downloaded files are also kept.
+   Choose **Keep my data** to cancel the reset.
 7. Click **Download student submission CSV** below the form (also in **Share findings**).
    Submit that CSV to the course LMS assignment. It contains all your added observations,
    regardless of analysis filters; imported class/sample records and predictions are excluded.

@@ -516,10 +516,42 @@ def render_add_compound_tab(atomic: pd.DataFrame, en_table: pd.DataFrame, radii:
         with add_cols[2]:
             st.caption("Add the validated record, then download the submission CSV below.")
 
+    from workspace_ui import delete_recorded_observation, start_fresh_observations
+    heading, reset = st.columns([4, 1])
+    heading.markdown("#### Added to this project")
+    reset.button("Start fresh", key="request_start_fresh",
+                 on_click=lambda: st.session_state.update(confirm_start_fresh=True))
+    if st.session_state.get("confirm_start_fresh"):
+        st.warning("Start fresh will remove all observations added through the entry form or notebook "
+                   "from this project's dataset and submission CSV, and reset the entry form. "
+                   "Imported data and notebook entries will remain. Notebook observations can be "
+                   "explicitly added again. Other projects, saved revisions, and downloaded files are kept.")
+        confirm, cancel = st.columns(2)
+        confirm.button("Clear recorded observations", key="confirm_start_fresh_button",
+                       type="primary", on_click=start_fresh_observations)
+        cancel.button("Keep my data", key="cancel_start_fresh",
+                      on_click=lambda: st.session_state.pop("confirm_start_fresh", None))
     if not st.session_state.manual_entries.empty:
-        st.markdown("#### Added to this project")
         manual_show = visible(st.session_state.manual_entries)
-        st.dataframe(manual_show[ordered_columns(manual_show)], width="stretch")
+        for _, row in st.session_state.manual_entries.iterrows():
+            summary, action = st.columns([4, 1])
+            summary.write(f"{row.get('Formula', 'Observation')} · {row.get('LabGroup', '')} · "
+                          f"trial {row.get('Trial', '')} · {row.get('P', '')} · bubbles: {row.get('Bub', '')}")
+            experiment_id = row.get("ExperimentID")
+            if pd.notna(experiment_id) and experiment_id:
+                action.button("Delete observation", key=f"delete_observation_{experiment_id}",
+                              on_click=lambda identifier=experiment_id:
+                              st.session_state.update(delete_observation_id=identifier))
+                if st.session_state.get("delete_observation_id") == experiment_id:
+                    st.warning(f"Delete {row.get('Formula', 'this observation')} · trial {row.get('Trial', '')} "
+                               "from this project's dataset and submission CSV?")
+                    confirm, cancel = st.columns(2)
+                    confirm.button("Confirm delete", key=f"confirm_delete_{experiment_id}",
+                                   on_click=delete_recorded_observation, args=(experiment_id,))
+                    cancel.button("Keep observation", key=f"cancel_delete_{experiment_id}",
+                                  on_click=lambda: st.session_state.pop("delete_observation_id", None))
+        with st.expander("View all observation details"):
+            st.dataframe(manual_show[ordered_columns(manual_show)], width="stretch")
         entries = st.session_state.manual_entries
         if "ExperimentID" in entries:
             choices = [i for i in entries.index if pd.notna(entries.loc[i, "ExperimentID"])]
@@ -557,6 +589,8 @@ def render_add_compound_tab(atomic: pd.DataFrame, en_table: pd.DataFrame, radii:
                     st.session_state.pending_manual_entry = pd.DataFrame()
                 st.button("Edit selected observation", on_click=load_for_edit)
                 st.caption("Editing preserves its experiment ID. Build/check again and add to replace the earlier record in this project.")
+    else:
+        st.caption("No recorded observations yet.")
     from submissions import render_submission_download
     render_submission_download(st.session_state.manual_entries, atomic)
 

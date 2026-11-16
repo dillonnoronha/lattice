@@ -77,6 +77,54 @@ def sync_project(store: pr.ProjectStore | None) -> None:
             st.session_state.save_error = str(exc)
 
 
+def reset_observation_form() -> None:
+    # Explicit values reset the browser's form widgets too; deleting keys alone
+    # lets Streamlit reconnect them to their previous frontend values.
+    st.session_state.update(
+        add_group="", add_semester="", add_instructor="", add_date=None,
+        add_phase="", add_bub="", add_trial=1, add_notes="",
+        add_a="La", add_an=2.0, add_ap="", add_apn=0.0,
+        add_b="Ni", add_bn=1.0, add_bp="", add_bpn=0.0,
+        add_bdp="", add_bdpn=0.0, add_on=4.0,
+        pending_manual_entry=pd.DataFrame(), pending_manual_issues=pd.DataFrame(),
+    )
+    st.session_state.pop("editing_entry_id", None)
+
+
+def delete_recorded_observation(experiment_id: str) -> None:
+    """Delete by stable identity, including when table indices have changed."""
+    entries = st.session_state.manual_entries
+    if "ExperimentID" not in entries:
+        return
+    matched = entries.ExperimentID.eq(experiment_id)
+    if not matched.any():
+        return
+    st.session_state.manual_entries = entries.loc[~matched].reset_index(drop=True)
+    if st.session_state.get("editing_entry_id") == experiment_id:
+        reset_observation_form()
+    # The notebook retains its separate observation, but can explicitly add it again.
+    for candidate in st.session_state.project["candidates"]:
+        if candidate["id"] == experiment_id:
+            candidate.pop("added_to_dataset", None)
+    st.session_state.pop("delete_observation_id", None)
+    pr.append_event(st.session_state.project, "Recorded observation deleted", experiment_id)
+
+
+def start_fresh_observations() -> None:
+    """Clear added dataset observations, preserving imports and the notebook."""
+    entries = st.session_state.manual_entries
+    removed_ids = set(entries.get("ExperimentID", pd.Series(dtype=str)).dropna())
+    project = st.session_state.project
+    for candidate in project["candidates"]:
+        if candidate["id"] in removed_ids:
+            candidate.pop("added_to_dataset", None)
+    st.session_state.manual_entries = entries.iloc[:0].copy()
+    reset_observation_form()
+    st.session_state.pop("delete_observation_id", None)
+    st.session_state.pop("confirm_start_fresh", None)
+    pr.append_event(project, "Recorded observations cleared", f"Removed {len(entries)} added observations.")
+
+
 def sidebar_projects(store: pr.ProjectStore | None) -> None:
     with st.sidebar.expander("Open or create a project", expanded="project" not in st.session_state):
         if st.button("Start a blank results sheet", type="primary", width="stretch"):

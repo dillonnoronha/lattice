@@ -1,8 +1,14 @@
-"""Install pinned runtime requirements only when the local environment needs them."""
+"""Install runtime requirements only when the local environment needs them."""
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 import subprocess
 import sys
+
+try:
+    from packaging.requirements import Requirement
+except ModuleNotFoundError:
+    # A fresh venv has pip before it has the app's packaging dependency.
+    from pip._vendor.packaging.requirements import Requirement
 
 
 def main() -> None:
@@ -12,12 +18,14 @@ def main() -> None:
         line = line.split("#", 1)[0].strip()
         if not line:
             continue
-        name, expected = line.split("==", 1)
+        requirement = Requirement(line)
+        if requirement.marker and not requirement.marker.evaluate():
+            continue
         try:
-            installed = version(name)
+            installed = version(requirement.name)
         except PackageNotFoundError:
             installed = None
-        if installed != expected:
+        if installed is None or not requirement.specifier.contains(installed):
             missing.append(line)
     if missing:
         print("Updating runtime: " + ", ".join(missing), flush=True)
